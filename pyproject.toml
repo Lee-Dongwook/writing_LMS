@@ -1,0 +1,68 @@
+[project]
+name = "writing-LMS"
+version = "0.1.0"
+description = "writing-LMS"
+authors = [
+    {name = "dongwook lee", email = "dlehddnr0713@gmail.com"}
+]
+readme = "README.md"
+requires-python = ">=3.13,<4.0"
+
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes (unused imports, undefined names, etc.)
+    "I",    # isort
+    "B",    # flake8-bugbear (common bug patterns)
+    "C4",   # flake8-comprehensions (comprehension optimizations)
+    "UP",   # pyupgrade (modernize Python syntax)
+    #"SIM",  # flake8-simplify (code simplification)
+    #"RUF",  # Ruff-specific rules
+    "ANN",  # flake8-annotations (type annotations)
+    "S",    # flake8-bandit (security)
+    "A",    # flake8-builtins (shadowing builtin names)
+    "T20",  # flake8-print (detect print statements)
+    "PERF", # Perflint (performance anti-patterns)
+    "PIE",  # flake8-pie (miscellaneous improvements)
+    "TC",   # flake8-type-checking (move imports into TYPE_CHECKING blocks)
+    "ASYNC",# flake8-async (async anti-patterns — critical for this codebase)
+    "DTZ",  # flake8-datetimez (timezone-aware datetimes)
+    #"G",    # flake8-logging-format (no f-strings/% in logging calls)
+    "LOG",  # flake8-logging (logging best practices)
+    "N",    # pep8-naming (naming conventions)
+    #"RET",  # flake8-return (return statement improvements)
+    "RSE",  # flake8-raise (raise statement improvements)
+    #"TRY",  # tryceratops (try/except best practices)
+    #"PTH",  # flake8-use-pathlib (prefer pathlib over os.path)
+    "FAST", # FastAPI-specific rules (redundant response_model, non-annotated Depends, unused path params)
+    "FA",   # flake8-future-annotations (enforce from __future__ import annotations)
+    "ISC",  # flake8-implicit-str-concat (ISC001 ignored below, ISC002 active)
+    "C90",  # mccabe complexity
+    "FURB", # refurb (modernization patterns beyond pyupgrade)
+]
+
+ignore = [
+    "E501",    # line too long — handled by formatter
+    "W191",    # tab indentation — handled by formatter
+    "B008",    # function call in argument default — FastAPI Depends(), Query(), Field() pattern
+    "COM812",  # trailing comma — conflicts with ruff formatter
+    "ISC001",  # implicit string concatenation — conflicts with ruff formatter
+    "RUF012",  # mutable class variable — Pydantic/SQLAlchemy model pattern
+    "SIM108",  # ternary operator enforcement — can reduce readability
+    "S104",    # allow 0.0.0.0 binding
+    "ANN401",  # allow typing.Any
+    "TC001",   # first-party imports in TYPE_CHECKING — FastAPI Annotated[] route params need these at runtime
+    "TC002",   # third-party imports in TYPE_CHECKING — Pydantic/SQLAlchemy runtime evaluation; see [tool.ruff.lint.flake8-type-checking] for safe classes
+    "UP042",   # replace-str-enum — str+Enum → StrEnum migration should be deliberate, not auto-enforced
+    "TRY003",  # long exception messages inline — common pattern, not worth enforcing
+    "TRY300",  # consider else block in try — style preference
+    "C408",    # dict() call vs literal — dict() reads like kwargs, preferred for named config
+    "RET504",  # unnecessary assignment before return — often improves debuggability
+    "N818",    # Exception name should end in Error — some exceptions are intentionally named differently
+    "FAST002", # Annotated Depends() style — migrate gradually, not forced all at once
+    "E402",    # module level import not at top — deferred imports inside methods are intentional
+    "ASYNC109", # async functions with timeout param — sandbox/tool APIs intentionally expose timeout as a plain argument
+    "PERF401", # manual-list-comprehension — for loops are often more readable than complex comprehensions
+]
