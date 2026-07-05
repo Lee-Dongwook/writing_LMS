@@ -33,7 +33,10 @@ class Settings(BaseSettings):
     )
     db_echo: bool = Field(default=False, alias="DB_ECHO")
 
-    # 현재 LLM 프로바이더(OpenAI)
+    # LLM 프로바이더/모델. init_chat_model "provider:model" 규격.
+    # 프로바이더 확정 후 env로 교체(예: "anthropic:claude-...", "openai:gpt-4o-mini").
+    llm_model: str = Field(default="openai:gpt-4o-mini", alias="LLM_MODEL")
+    llm_temperature: float = Field(default=0.3, alias="LLM_TEMPERATURE")
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
 
     # 인증 (로컬 JWT). 운영 환경에서는 JWT_SECRET를 반드시 교체할 것.

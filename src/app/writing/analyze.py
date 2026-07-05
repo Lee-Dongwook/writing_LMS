@@ -1,0 +1,41 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from langchain.chat_models import init_chat_model
+from langchain_core.messages import HumanMessage, SystemMessage
+
+from src.app.shared.config import get_settings
+from src.app.writing.prompt import analysis_system_prompt
+from src.app.writing.schema import PassageAnalysis
+
+if TYPE_CHECKING:
+    from langchain_core.language_models import BaseChatModel
+
+
+def get_chat_model() -> BaseChatModel:
+    """설정(`LLM_MODEL`, `LLM_TEMPERATURE`) 기반 채팅 모델을 생성한다.
+
+    모델 문자열은 `init_chat_model`의 "provider:model" 규격을 따른다
+    (예: "openai:gpt-4o-mini", "anthropic:claude-...").
+    """
+    settings = get_settings()
+    return init_chat_model(settings.llm_model, temperature=settings.llm_temperature)
+
+
+async def analyze_passage(
+    passage: str,
+    model: BaseChatModel | None = None,
+) -> PassageAnalysis:
+    """수능 비문학 지문을 분석해 구조화 결과를 반환한다.
+
+    `model`을 주입하면 해당 모델을 사용한다(테스트/대체 프로바이더용). 미지정 시
+    설정 기반 모델을 생성한다.
+    """
+    chat = model or get_chat_model()
+    structured = chat.with_structured_output(PassageAnalysis)
+    messages = [
+        SystemMessage(content=analysis_system_prompt),
+        HumanMessage(content=passage),
+    ]
+    return await structured.ainvoke(messages)

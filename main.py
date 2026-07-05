@@ -12,6 +12,7 @@ from src.app.shared import init as shared_init
 from src.app.shared.exceptions import global_exception_handler
 from src.app.shared.logging import setup_logging
 from src.app.shared.middleware import setup_middleware
+from src.app.writing.router import router as writing_router
 
 env_type = os.getenv("ENV", "development")
 shared_init.load_dotenv(env_type)
@@ -35,6 +36,7 @@ app = FastAPI(
 setup_middleware(app)
 
 app.include_router(auth_router)
+app.include_router(writing_router)
 
 
 @app.get("/openapi.yaml", include_in_schema=False)
