@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import DateTime, String
+from sqlalchemy import DateTime, ForeignKey, String
 from sqlalchemy.dialects.postgresql import JSONB, UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.app.shared.database import Base
+
+if TYPE_CHECKING:
+    from src.app.user.model import User
 
 
 def _utcnow() -> datetime:
@@ -18,10 +21,9 @@ class Document(Base):
     """수능 비문학 학습 문서 템플릿.
 
     `inputs`는 동적 폼 요소 정의(JSONB), `pipeline`은 LangGraph 실행 스키마(JSONB)를
-    담는다. 문서는 사용자별로 소유된다(`user_uuid`).
+    담는다. 문서는 사용자별로 소유된다(`user_uuid` → user.uuid).
 
-    TODO: User 모델/인증 레이어가 준비되면 `user_uuid`에 FK와 relationship을 복원하고,
-    공용 RegistryMixin(UnifiedResourceType)을 다시 붙인다.
+    TODO: 공용 RegistryMixin(UnifiedResourceType)은 레지스트리 레이어 준비 시 부착.
     """
 
     __tablename__ = "document"
@@ -49,4 +51,9 @@ class Document(Base):
         nullable=True,
     )
 
-    user_uuid: Mapped[str] = mapped_column(UUID(as_uuid=False), index=True)
+    user_uuid: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("user.uuid", ondelete="CASCADE"),
+        index=True,
+    )
+    user: Mapped[User] = relationship(back_populates="documents")

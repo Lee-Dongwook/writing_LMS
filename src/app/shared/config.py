@@ -36,6 +36,17 @@ class Settings(BaseSettings):
     # 현재 LLM 프로바이더(OpenAI)
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
 
+    # 인증 (로컬 JWT). 운영 환경에서는 JWT_SECRET를 반드시 교체할 것.
+    jwt_secret: str = Field(
+        default="dev-insecure-secret-change-me-in-production-please",
+        alias="JWT_SECRET",
+    )
+    jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
+    access_token_expire_minutes: int = Field(
+        default=60 * 24,
+        alias="ACCESS_TOKEN_EXPIRE_MINUTES",
+    )
+
     # CORS 허용 오리진(콤마 구분). 예: "http://localhost:3000,https://app.example.com"
     cors_origins: str = Field(default="*", alias="CORS_ORIGINS")
 
