@@ -1,12 +1,15 @@
 import os
-from collections.abc import AsyncIterator
-from pathlib import Path
 
 import uvicorn
 import yaml
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, Response
 from scalar_fastapi import get_scalar_api_reference
+
+from src.app.shared import init as shared_init
+from src.app.shared.exceptions import global_exception_handler
+from src.app.shared.logging import setup_logging
+from src.app.shared.middleware import setup_middleware
 
 env_type = os.getenv("ENV", "development")
 shared_init.load_dotenv(env_type)

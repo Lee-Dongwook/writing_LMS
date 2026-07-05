@@ -1,0 +1,62 @@
+from __future__ import annotations
+
+from functools import lru_cache
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    """애플리케이션 전역 설정.
+
+    값은 환경변수에서 로드된다. `.env` 파일 로딩은 `shared.init.load_dotenv`가
+    별도로 담당하므로 여기서는 파일을 직접 읽지 않는다.
+    """
+
+    model_config = SettingsConfigDict(
+        env_file=None,
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    # 실행 환경: development / local / production
+    env: str = Field(default="development", alias="ENV")
+
+    app_name: str = Field(default="Writing LMS", alias="APP_NAME")
+    version: str = Field(default="0.1.0", alias="APP_VERSION")
+    log_level: str = Field(default="INFO", alias="LOG_LEVEL")
+
+    # SQLAlchemy 비동기 DSN (예: postgresql+psycopg://user:pass@host:5432/db)
+    database_url: str = Field(
+        default="postgresql+psycopg://postgres:postgres@localhost:5432/writing_lms",
+        alias="DATABASE_URL",
+    )
+    db_echo: bool = Field(default=False, alias="DB_ECHO")
+
+    # 현재 LLM 프로바이더(OpenAI)
+    openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
+
+    # CORS 허용 오리진(콤마 구분). 예: "http://localhost:3000,https://app.example.com"
+    cors_origins: str = Field(default="*", alias="CORS_ORIGINS")
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def checkpoint_dsn(self) -> str:
+        """LangGraph Postgres 체크포인터용 psycopg DSN.
+
+        SQLAlchemy 드라이버 접미사(`+psycopg`, `+asyncpg`)를 제거한 순수 DSN을 반환한다.
+        """
+        return self.database_url.replace("+psycopg", "").replace("+asyncpg", "")
+
+    @property
+    def is_local(self) -> bool:
+        return self.env == "local"
+
+
+@lru_cache
+def get_settings() -> Settings:
+    """프로세스 전역에서 재사용되는 캐시된 설정 인스턴스."""
+    return Settings()
