@@ -1,7 +1,7 @@
 # Writing LMS Makefile
 # 환경별 실행을 위한 명령어들
 
-.PHONY: help dev local prod install clean test test-coverage eval eval-baseline eval-quick eval-pr-gate eval-multi eval-agreement eval-report eval-nightly lint format pre-commit db-up db-down db-logs db-psql docker-up docker-down
+.PHONY: help dev local prod install clean test test-coverage eval eval-baseline eval-quick eval-pr-gate eval-multi eval-agreement eval-report eval-nightly lint format pre-commit db-up db-down db-logs db-psql docker-up docker-down checkpoint-setup db-init
 
 # 기본 명령어 (도움말)
 help:
@@ -399,4 +399,18 @@ docker-up:
 docker-down:
 	@echo "🧹 전체 스택 중지 및 볼륨 삭제"
 	docker compose --profile app down -v
+
+# LangGraph 체크포인터 테이블 생성/마이그레이션(.env 사용, idempotent)
+checkpoint-setup:
+	@echo "🧩 체크포인터 테이블 준비 (.env 사용)"
+	@if [ -f .env ]; then \
+		set -a && . ./.env && set +a && uv run python -m scripts.setup_checkpointer; \
+	else \
+		echo "❌ .env 파일이 없습니다!"; \
+		exit 1; \
+	fi
+
+# DB 초기화 한 방: 앱 테이블(Alembic) + 체크포인터 테이블
+db-init: migrate-dev checkpoint-setup
+	@echo "✅ DB 초기화 완료 (user/document + 체크포인터 테이블)"
 

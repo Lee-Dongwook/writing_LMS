@@ -51,6 +51,10 @@ dev = [
 ]
 
 
+[tool.ruff]
+# Alembic 마이그레이션(버전 파일)은 생성물 성격 — 엄격 룰셋 제외
+extend-exclude = ["alembic/versions"]
+
 [tool.ruff.lint]
 select = [
     "E",    # pycodestyle errors
