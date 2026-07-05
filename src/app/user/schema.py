@@ -12,6 +12,7 @@ class UserRead(BaseModel):
     email: EmailStr
     name: str | None = None
     is_active: bool = True
+    is_admin: bool = False
 
 
 class UserCreate(BaseModel):

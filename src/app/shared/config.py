@@ -1,9 +1,15 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import Self
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# 개발 편의용 기본 시크릿. 운영에서 이 값이 그대로면 부팅을 거부한다.
+_INSECURE_JWT_SECRET = "dev-insecure-secret-change-me-in-production-please"
+# 운영에서 요구하는 최소 시크릿 길이.
+_MIN_JWT_SECRET_LEN = 32
 
 
 class Settings(BaseSettings):
@@ -50,8 +56,9 @@ class Settings(BaseSettings):
     agent_checkpointer: str = Field(default="memory", alias="AGENT_CHECKPOINTER")
 
     # 인증 (로컬 JWT). 운영 환경에서는 JWT_SECRET를 반드시 교체할 것.
+    # 생성: `make gen-secret` (python -c "import secrets;print(secrets.token_urlsafe(48))")
     jwt_secret: str = Field(
-        default="dev-insecure-secret-change-me-in-production-please",
+        default=_INSECURE_JWT_SECRET,
         alias="JWT_SECRET",
     )
     jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
@@ -59,6 +66,13 @@ class Settings(BaseSettings):
         default=60 * 24,
         alias="ACCESS_TOKEN_EXPIRE_MINUTES",
     )
+
+    # 어드민(교사) 부트스트랩 계정. `make seed-admin`이 이 값으로 계정을 upsert한다.
+    # 비밀번호는 평문이 아니라 bcrypt 해시로 저장한다(운영 프레임).
+    # 해시 생성: `make hash-password`. 미설정 시 시드는 건너뛴다.
+    admin_email: str | None = Field(default=None, alias="ADMIN_EMAIL")
+    admin_password_hash: str | None = Field(default=None, alias="ADMIN_PASSWORD_HASH")
+    admin_name: str | None = Field(default=None, alias="ADMIN_NAME")
 
     # CORS 허용 오리진(콤마 구분). 예: "http://localhost:3000,https://app.example.com"
     cors_origins: str = Field(default="*", alias="CORS_ORIGINS")
@@ -78,6 +92,25 @@ class Settings(BaseSettings):
     @property
     def is_local(self) -> bool:
         return self.env == "local"
+
+    @property
+    def is_production(self) -> bool:
+        return self.env == "production"
+
+    @model_validator(mode="after")
+    def _validate_production_secrets(self) -> Self:
+        """운영 환경에서 안전하지 않은 JWT 시크릿을 거부한다(부팅 차단).
+
+        개발/로컬에서는 기본 시크릿을 허용해 편의를 유지한다.
+        """
+        if self.is_production:
+            if self.jwt_secret == _INSECURE_JWT_SECRET:
+                msg = "운영 환경에서는 JWT_SECRET를 반드시 교체해야 합니다(`make gen-secret`)."
+                raise ValueError(msg)
+            if len(self.jwt_secret) < _MIN_JWT_SECRET_LEN:
+                msg = f"JWT_SECRET는 최소 {_MIN_JWT_SECRET_LEN}자 이상이어야 합니다."
+                raise ValueError(msg)
+        return self
 
 
 @lru_cache

@@ -43,3 +43,16 @@ async def verify_token(
 
 
 CurrentUser = Annotated[UserRead, Depends(verify_token)]
+
+
+async def verify_admin(user: CurrentUser) -> UserRead:
+    """관리자 전용 의존성. 인증은 통과했으나 관리자가 아니면 403."""
+    if not user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="관리자 권한이 필요합니다.",
+        )
+    return user
+
+
+CurrentAdmin = Annotated[UserRead, Depends(verify_admin)]

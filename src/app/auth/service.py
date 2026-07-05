@@ -56,6 +56,40 @@ async def authenticate_user(
     return user
 
 
+async def ensure_admin_user(
+    db: AsyncSession,
+    email: str,
+    password_hash: str,
+    name: str | None = None,
+) -> User:
+    """어드민 계정을 멱등하게 보장한다(부트스트랩용).
+
+    비밀번호는 이미 bcrypt 해시된 값(`ADMIN_PASSWORD_HASH`)을 그대로 저장한다 —
+    평문은 env/프로세스에 남기지 않는다. 없으면 관리자 계정을 생성하고, 있으면 해시를
+    갱신하고 관리자로 승격한다(`.env`의 ADMIN_* 변경을 재실행으로 반영).
+    """
+    user = await get_user_by_email(db, email)
+    if user is None:
+        user = User(
+            uuid=str(uuid4()),
+            email=email,
+            name=name,
+            hashed_password=password_hash,
+            is_active=True,
+            is_admin=True,
+        )
+        db.add(user)
+    else:
+        user.hashed_password = password_hash
+        user.is_active = True
+        user.is_admin = True
+        if name is not None:
+            user.name = name
+    await db.flush()
+    await db.refresh(user)
+    return user
+
+
 async def get_or_create_user(
     db: AsyncSession,
     email: str,

@@ -1,7 +1,7 @@
 # Writing LMS Makefile
 # 환경별 실행을 위한 명령어들
 
-.PHONY: help dev local prod install clean test test-coverage eval eval-baseline eval-quick eval-pr-gate eval-multi eval-agreement eval-report eval-nightly lint format pre-commit db-up db-down db-logs db-psql docker-up docker-down checkpoint-setup db-init
+.PHONY: help dev local prod install clean test test-coverage eval eval-baseline eval-quick eval-pr-gate eval-multi eval-agreement eval-report eval-nightly lint format pre-commit db-up db-down db-logs db-psql docker-up docker-down checkpoint-setup db-init seed-admin gen-secret hash-password
 
 # 기본 명령어 (도움말)
 help:
@@ -413,4 +413,22 @@ checkpoint-setup:
 # DB 초기화 한 방: 앱 테이블(Alembic) + 체크포인터 테이블
 db-init: migrate-dev checkpoint-setup
 	@echo "✅ DB 초기화 완료 (user/document + 체크포인터 테이블)"
+
+# JWT 시크릿 생성(운영용). 출력을 .env의 JWT_SECRET 에 넣는다.
+gen-secret:
+	@uv run python -c "import secrets; print(secrets.token_urlsafe(48))"
+
+# 어드민 비밀번호 bcrypt 해시 생성. 출력을 .env의 ADMIN_PASSWORD_HASH 에 '작은따옴표'로 넣는다.
+hash-password:
+	@uv run python -m scripts.hash_password
+
+# 어드민(교사) 계정 시드(.env의 ADMIN_* 사용, 멱등)
+seed-admin:
+	@echo "👤 어드민 계정 시드 (.env 사용)"
+	@if [ -f .env ]; then \
+		set -a && . ./.env && set +a && uv run python -m scripts.seed_admin; \
+	else \
+		echo "❌ .env 파일이 없습니다!"; \
+		exit 1; \
+	fi
 
