@@ -1,0 +1,76 @@
+# Writing LMS 로컬 개발용 Compose
+#
+# 기본 사용(권장): DB만 도커로 띄우고 앱은 호스트에서 실행
+#   docker compose up -d db      # Postgres 기동 (localhost:5432)
+#   make dev                     # 호스트에서 FastAPI 실행 → 도커 DB에 접속
+#
+# 앱까지 컨테이너로 실행(선택):
+#   docker compose --profile app up --build
+#
+# DB 브라우저(선택):
+#   docker compose --profile tools up -d adminer   # http://localhost:8080
+#
+# 정리(볼륨까지 삭제):
+#   docker compose down -v
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: writing-lms-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-writing_lms}
+    ports:
+      # 호스트 앱(make dev)이 localhost:5432로 접속 → 기존 DATABASE_URL 그대로 사용
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # DB가 실제로 연결 가능해질 때까지 대기(앱 서비스의 depends_on 조건)
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-writing_lms}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # 앱을 컨테이너로 돌릴 때만 사용(profile=app). 기본 up에는 포함되지 않는다.
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: writing-lms-app
+    profiles: ["app"]
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      # 컨테이너 네트워크 기준 재정의(호스트 localhost/11434 → 도커 게이트웨이)
+      ENV: production
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-writing_lms}
+      OLLAMA_HOST: ${OLLAMA_HOST_DOCKER:-http://host.docker.internal:11434}
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    extra_hosts:
+      # Linux에서도 host.docker.internal로 호스트 ollama 접근 가능하게
+      - "host.docker.internal:host-gateway"
+
+  # 가벼운 DB 브라우저(선택, profile=tools)
+  adminer:
+    image: adminer:4
+    container_name: writing-lms-adminer
+    profiles: ["tools"]
+    restart: unless-stopped
+    depends_on:
+      - db
+    ports:
+      - "${ADMINER_PORT:-8080}:8080"
+
+volumes:
+  pgdata:

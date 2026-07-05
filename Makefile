@@ -1,7 +1,7 @@
 # Writing LMS Makefile
 # 환경별 실행을 위한 명령어들
 
-.PHONY: help dev local prod install clean test test-coverage eval eval-baseline eval-quick eval-pr-gate eval-multi eval-agreement eval-report eval-nightly lint format pre-commit
+.PHONY: help dev local prod install clean test test-coverage eval eval-baseline eval-quick eval-pr-gate eval-multi eval-agreement eval-report eval-nightly lint format pre-commit db-up db-down db-logs db-psql docker-up docker-down
 
 # 기본 명령어 (도움말)
 help:
@@ -367,4 +367,36 @@ current-pytest:
 		echo "❌ .env.pytest 파일이 없습니다!"; \
 		exit 1; \
 	fi
+
+# ─────────────────────────────────────────────────────────────
+# 🐳 Docker (로컬 개발용 Postgres)
+# ─────────────────────────────────────────────────────────────
+
+# DB만 도커로 기동(권장) — 이후 `make dev`로 호스트 앱이 localhost:5432 접속
+db-up:
+	@echo "🐳 Postgres 컨테이너 기동 (localhost:5432)"
+	docker compose up -d db
+
+# DB 컨테이너 중지(데이터 볼륨은 유지)
+db-down:
+	@echo "🛑 Postgres 컨테이너 중지"
+	docker compose stop db
+
+# DB 로그 팔로우
+db-logs:
+	docker compose logs -f db
+
+# DB에 psql 접속(컨테이너 내부 psql 사용 — 호스트에 psql 불필요)
+db-psql:
+	docker compose exec db psql -U postgres -d writing_lms
+
+# 앱까지 컨테이너로 전체 기동(빌드 포함)
+docker-up:
+	@echo "🐳 전체 스택(app+db) 기동"
+	docker compose --profile app up --build -d
+
+# 전체 스택 중지 + 볼륨 삭제(초기화)
+docker-down:
+	@echo "🧹 전체 스택 중지 및 볼륨 삭제"
+	docker compose --profile app down -v
 

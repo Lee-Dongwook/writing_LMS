@@ -19,17 +19,10 @@
 - SSE 엔드포인트: `POST /writing/chat/stream`, `/chat/upload/stream`, `/chat/resume/stream`
   (`text/event-stream`, `event:`/`data:` 프레임, UTF-8 `ensure_ascii=False`).
 
-**인증 보호 + 스레드 사용자 귀속 (`src/app/writing/router.py`)**
-
-- `/writing/*` 전 엔드포인트(analyze·ocr·pdf·chat·stream 계열 포함)를 `CurrentUser`
-  의존성으로 보호. 토큰 없으면 401. `analyze`의 임시 공개(TODO) 제거.
-- 대화 스레드를 사용자에 귀속: 체크포인터 thread_id를 `{user_uuid}:{client_thread}`로
-  네임스페이스(`_thread_key`)해, 다른 사용자가 같은 스레드 식별자를 제시해도 접근 차단.
-  응답의 `thread_uuid`는 내부 네임스페이스를 제거한 클라이언트 식별자로 반환(uuid 미노출).
-
 ### 예정
 
 - **Postgres 체크포인터 전환**: `AGENT_CHECKPOINTER=postgres` + `get_checkpoint()` 배선 + 체크포인터 테이블 `setup()`(Alembic 준비 후).
+- **인증 보호**: `/writing/*`(analyze·chat 포함)를 `CurrentUser` 의존성으로 보호, 스레드를 사용자에 귀속.
 - OCR 실제 백엔드 선택(현재 stub — 스캔 PDF·이미지 경로에 필요). 추천 후보: RapidOCR.
 - `doc/api.py`·`doc/pipeline_service.py`(범용 파이프라인 엔진)는 미정의 심볼 다수로 아직 미배선(WIP).
 
