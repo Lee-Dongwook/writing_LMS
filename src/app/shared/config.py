@@ -10,6 +10,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 _INSECURE_JWT_SECRET = "dev-insecure-secret-change-me-in-production-please"
 # 운영에서 요구하는 최소 시크릿 길이.
 _MIN_JWT_SECRET_LEN = 32
+# 개발 편의용 기본 DB DSN(로컬 도커/네이티브). 운영에서 이 값이 그대로면 부팅을 거부한다.
+_INSECURE_DATABASE_URL = "postgresql+psycopg://postgres:postgres@localhost:5432/writing_lms"
 
 
 class Settings(BaseSettings):
@@ -34,7 +36,7 @@ class Settings(BaseSettings):
 
     # SQLAlchemy 비동기 DSN (예: postgresql+psycopg://user:pass@host:5432/db)
     database_url: str = Field(
-        default="postgresql+psycopg://postgres:postgres@localhost:5432/writing_lms",
+        default=_INSECURE_DATABASE_URL,
         alias="DATABASE_URL",
     )
     db_echo: bool = Field(default=False, alias="DB_ECHO")
@@ -99,9 +101,9 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _validate_production_secrets(self) -> Self:
-        """운영 환경에서 안전하지 않은 JWT 시크릿을 거부한다(부팅 차단).
+        """운영 환경에서 안전하지 않은 기본 시크릿/DSN을 거부한다(부팅 차단).
 
-        개발/로컬에서는 기본 시크릿을 허용해 편의를 유지한다.
+        개발/로컬에서는 기본값을 허용해 편의를 유지한다.
         """
         if self.is_production:
             if self.jwt_secret == _INSECURE_JWT_SECRET:
@@ -109,6 +111,12 @@ class Settings(BaseSettings):
                 raise ValueError(msg)
             if len(self.jwt_secret) < _MIN_JWT_SECRET_LEN:
                 msg = f"JWT_SECRET는 최소 {_MIN_JWT_SECRET_LEN}자 이상이어야 합니다."
+                raise ValueError(msg)
+            if self.database_url == _INSECURE_DATABASE_URL:
+                msg = (
+                    "운영 환경에서는 DATABASE_URL를 반드시 설정해야 합니다"
+                    "(기본 postgres:postgres 크리덴셜 사용 불가)."
+                )
                 raise ValueError(msg)
         return self
 
