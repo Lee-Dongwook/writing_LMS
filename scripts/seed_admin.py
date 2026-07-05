@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
+import src.app.models  # noqa: F401 - User/Document 매퍼 등록(관계 'Document' 문자열 해소)
 from src.app.auth.service import ensure_admin_user
 from src.app.shared.config import get_settings
 from src.app.shared.database import async_context_session
