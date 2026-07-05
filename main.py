@@ -70,6 +70,13 @@ app.include_router(writing_router)
 app.include_router(llm_router)
 
 
+@app.get("/health", tags=["health"], summary="라이브니스 체크")
+async def health() -> dict[str, str]:
+    """앱 생존 확인(무의존성). 인프라/프론트의 헬스체크용."""
+    settings = get_settings()
+    return {"status": "ok", "app": settings.app_name, "env": settings.env}
+
+
 @app.get("/openapi.yaml", include_in_schema=False)
 def get_openapi_yaml() -> Response:
     openapi_schema = app.openapi()

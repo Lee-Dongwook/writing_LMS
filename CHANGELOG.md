@@ -19,10 +19,36 @@
 - SSE 엔드포인트: `POST /writing/chat/stream`, `/chat/upload/stream`, `/chat/resume/stream`
   (`text/event-stream`, `event:`/`data:` 프레임, UTF-8 `ensure_ascii=False`).
 
+**인증 보호 + 스레드 사용자 귀속 (`src/app/writing/router.py`)**
+
+- `/writing/*` 전 엔드포인트를 `CurrentUser`로 보호(토큰 없으면 401).
+- 체크포인터 thread_id를 `{user_uuid}:{client_thread}`로 네임스페이스(`_thread_key`) →
+  타 사용자가 같은 식별자를 제시해도 스레드 접근 차단. 응답 `thread_uuid`는 client 값으로 반환.
+
+**Postgres 체크포인터 런타임 배선 (`main.py`·`shared/database.py`·`writing/agent.py`)**
+
+- `AGENT_CHECKPOINTER=postgres`면 FastAPI lifespan에서 커넥션 풀 기반
+  `AsyncPostgresSaver`(`checkpointer_pool`)를 열어 대화 에이전트에 주입(`set_active_agent`).
+  재시작해도 대화 스레드가 유지된다. `memory`면 기존 인메모리로 동작.
+
+**어드민 계정 + 운영 설정 가드**
+
+- `User.is_admin` + 마이그레이션 `0002`, `CurrentAdmin` 의존성, `UserRead.is_admin` 노출.
+- `make seed-admin`(멱등 upsert) — 비밀번호는 bcrypt 해시(`ADMIN_PASSWORD_HASH`)로만 저장.
+  해시 생성 `make hash-password`, JWT 시크릿 생성 `make gen-secret`.
+- 운영(`ENV=production`)에서 기본 JWT 시크릿/짧은 시크릿/기본 DATABASE_URL이면 부팅 거부.
+
+**인프라 / 운영**
+
+- Docker: `Dockerfile`(uv), `docker-compose.yml`(Postgres 기본 + app/adminer 프로파일),
+  Make 타깃(`db-up`/`db-init`/`checkpoint-setup`/`seed-admin` 등).
+- Alembic 셋업 + 초기 마이그레이션(`0001` user/document, `0002` is_admin).
+- `GET /health` 라이브니스 엔드포인트.
+- **테스트 스위트**(`tests/`, DB 없이 동작): 인증 크립토·운영 설정 가드·401 보호·
+  스레드 격리·SSE 이벤트·헬스체크. `asyncio_mode=auto`, `pythonpath=["."]`.
+
 ### 예정
 
-- **Postgres 체크포인터 전환**: `AGENT_CHECKPOINTER=postgres` + `get_checkpoint()` 배선 + 체크포인터 테이블 `setup()`(Alembic 준비 후).
-- **인증 보호**: `/writing/*`(analyze·chat 포함)를 `CurrentUser` 의존성으로 보호, 스레드를 사용자에 귀속.
 - OCR 실제 백엔드 선택(현재 stub — 스캔 PDF·이미지 경로에 필요). 추천 후보: RapidOCR.
 - `doc/api.py`·`doc/pipeline_service.py`(범용 파이프라인 엔진)는 미정의 심볼 다수로 아직 미배선(WIP).
 

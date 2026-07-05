@@ -112,3 +112,22 @@ ignore = [
     "ASYNC109", # async functions with timeout param — sandbox/tool APIs intentionally expose timeout as a plain argument
     "PERF401", # manual-list-comprehension — for loops are often more readable than complex comprehensions
 ]
+
+[tool.ruff.lint.per-file-ignores]
+# 테스트는 assert/픽스처/더미 자격증명 사용이 자연스러움 — 엄격 룰 일부 완화
+"tests/**" = [
+    "ANN",   # 테스트 함수/픽스처 타입 어노테이션 강제 완화
+    "S101",  # assert 사용 허용
+    "S105",  # 하드코딩 비밀번호 문자열(테스트 더미) 허용
+    "S106",  # 하드코딩 비밀번호 인자 허용
+    "ARG",   # 미사용 픽스처 인자 허용
+    "SLF001", # 내부(_prefix) 심볼 테스트 접근 허용
+]
+
+[tool.pytest.ini_options]
+# async 테스트를 데코레이터 없이 자동 인식
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-q"
+# 리포 루트를 sys.path에 추가(테스트가 main/src.app import)
+pythonpath = ["."]
