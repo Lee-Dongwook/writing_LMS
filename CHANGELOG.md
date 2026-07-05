@@ -6,7 +6,52 @@
 
 ## [Unreleased]
 
-초기 스캐폴드 이후 백엔드 기반 레이어를 구축하는 단계. 아직 릴리스/태그 없음.
+### 예정
+
+- **SSE 스트리밍**: 대화형 에이전트 응답을 `astream_graph` 패턴으로 스트리밍(`message_chunk`/`interrupt` 이벤트).
+- **Postgres 체크포인터 전환**: `AGENT_CHECKPOINTER=postgres` + `get_checkpoint()` 배선 + 체크포인터 테이블 `setup()`(Alembic 준비 후).
+- **인증 보호**: `/writing/*`(analyze·chat 포함)를 `CurrentUser` 의존성으로 보호, 스레드를 사용자에 귀속.
+- OCR 실제 백엔드 선택(현재 stub — 스캔 PDF·이미지 경로에 필요). 추천 후보: RapidOCR.
+- `doc/api.py`·`doc/pipeline_service.py`(범용 파이프라인 엔진)는 미정의 심볼 다수로 아직 미배선(WIP).
+
+## [0.2.0] - 2026-07-05
+
+수능 비문학의 분야 다양성에 대응하는 **도메인 라우팅 멀티에이전트**, **PDF 입력**,
+**대화형 human-in-the-loop 에이전트**를 추가.
+
+### Added
+
+**도메인 라우팅 멀티에이전트 (`src/app/writing/`)**
+- 6분류 도메인 체계(`domain.py`): 인문/사회/경제/과학/기술/예술 + `DomainClassification`
+  (도메인/확신도/보조도메인/근거), `classify_domain()` 분류기(temp=0).
+- 도메인별 **분석 렌즈**(`domain_prompts.py`): base 프롬프트에 분야별 본론 전개·어휘 선정
+  초점을 합성(`compose_system_prompt`). 저신뢰/미분류는 generalist로 폴백.
+- `run_analysis()`: 분류 → 렌즈 선택 → 분석 파이프라인. `analyze_passage(domain=...)`로 렌즈 주입.
+- `Summary`에 `structure_type`(인과/대조/통시/문제-해결/분류-위계/과정-절차 등 구조 신호) 추가.
+
+**PDF 입력 (`src/app/writing/pdf.py`)**
+- `extract_pdf_text()`: 텍스트 레이어 우선 추출(pymupdf, 스레드 오프로드) → 부실하면
+  페이지를 이미지로 렌더해 OCR 폴백. 페이지 상한/파싱 오류 일원화(`PdfError`).
+- 엔드포인트: `POST /writing/pdf`(추출), `POST /writing/analyze-pdf`(추출→분석).
+- 텍스트 레이어 PDF는 OCR 백엔드 없이도 동작(수능 문제지 대부분).
+
+**대화형 human-in-the-loop 에이전트 (`src/app/writing/agent.py`)**
+- LangGraph ReAct 에이전트 + **리뷰 게이트**(`interrupt`): 분석/수정 초안을 제시하고
+  사용자 승인/수정 지시를 받아 재개(`Command(resume=...)`).
+- 툴: `analyze_passage_tool`(분류→렌즈→분석), `revise_analysis_tool`(초안 부분 수정).
+  파일은 "수집 경계"에서 추출해 대화(`pending_passage` + `HumanMessage`)로 주입.
+- 상태 영속: 인메모리 체크포인터(기본, DB 불필요) ↔ `AGENT_CHECKPOINTER`로 Postgres 전환.
+- 엔드포인트: `POST /writing/chat`(메시지), `POST /writing/chat/upload`(이미지/PDF 업로드),
+  `POST /writing/chat/resume`(리뷰 재개). 응답 `AgentTurnResponse`(status·reply·interrupt·analysis).
+
+### Changed
+- `POST /writing/analyze`·`/analyze-image` 응답이 `AnalyzeResponse`로 변경 — 분석 결과에
+  더해 어떤 도메인 렌즈로 분석했는지(`classification`)를 함께 반환.
+- `Settings`에 `AGENT_CHECKPOINTER`(기본 `memory`) 추가.
+
+## [0.1.0] - 2026-07-05
+
+초기 스캐폴드 이후 백엔드 기반 레이어를 구축하는 단계.
 
 ### Added
 
@@ -48,11 +93,10 @@
 ### Removed
 - macOS/iCloud 동기화가 생성한 중복 파일 제거: `pyproject 2.toml`, `langgraph_app 2.py`.
 
-### 알려진 제약 / 예정
-- Alembic 마이그레이션·실 DB 통합 미완(인증 DB happy-path는 Postgres 필요).
-- LLM 프로바이더 미확정(설정으로 교체). 라이브 실행에 프로바이더 키 필요.
-- OCR 실제 백엔드 미선택(스캐폴드까지). 추천 후보: RapidOCR.
-- `/writing/*` 엔드포인트는 v1 공개 상태(추후 `CurrentUser`로 보호 예정).
-- `doc/api.py`·`doc/pipeline_service.py`는 미정의 심볼 다수로 아직 미배선(WIP).
+**LLM 공용 팩토리 / ollama**
+- `src/app/llm/`: `get_chat_model()` 프로바이더 공용 팩토리(ollama면 `OLLAMA_HOST`를
+  base_url로 주입), `GET /llm/health`(ollama 서버·모델 준비 점검).
 
-[Unreleased]: https://example.com/writing-lms/compare/HEAD
+[Unreleased]: https://example.com/writing-lms/compare/v0.2.0...HEAD
+[0.2.0]: https://example.com/writing-lms/compare/v0.1.0...v0.2.0
+[0.1.0]: https://example.com/writing-lms/releases/tag/v0.1.0

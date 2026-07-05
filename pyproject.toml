@@ -1,6 +1,6 @@
 [project]
 name = "writing-LMS"
-version = "0.1.0"
+version = "0.2.0"
 description = "writing-LMS"
 authors = [
     {name = "dongwook lee", email = "dlehddnr0713@gmail.com"}
