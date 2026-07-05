@@ -78,3 +78,39 @@ class AnalyzeResponse(BaseModel):
 
     classification: DomainClassification = Field(description="지문 도메인 분류 결과.")
     analysis: PassageAnalysis = Field(description="도메인 렌즈로 튜닝된 분석 결과.")
+
+
+class ChatRequest(BaseModel):
+    """대화형 에이전트에 보낼 메시지."""
+
+    message: str = Field(min_length=1, description="사용자 메시지(지문 원문 또는 지시).")
+    thread_uuid: str | None = Field(
+        default=None,
+        description="이어갈 대화 스레드 식별자. 없으면 새 스레드를 시작한다.",
+    )
+
+
+class ResumeRequest(BaseModel):
+    """리뷰 게이트 재개 요청(승인 또는 수정 지시)."""
+
+    thread_uuid: str = Field(description="인터럽트된 대화 스레드 식별자.")
+    decision: str = Field(
+        min_length=1,
+        description="'승인' 등의 확정 의사 또는 구체적 수정 지시.",
+    )
+
+
+class AgentTurnResponse(BaseModel):
+    """대화형 에이전트 한 턴의 결과."""
+
+    thread_uuid: str = Field(description="대화 스레드 식별자(재개에 사용).")
+    status: str = Field(description="interrupted(리뷰 대기) | completed(턴 종료).")
+    reply: str | None = Field(default=None, description="완료 시 에이전트의 응답 텍스트.")
+    interrupt: dict | None = Field(
+        default=None,
+        description="리뷰 게이트 인터럽트 페이로드(분석 초안 포함).",
+    )
+    analysis: AnalyzeResponse | None = Field(
+        default=None,
+        description="현재 분석 초안(있는 경우).",
+    )

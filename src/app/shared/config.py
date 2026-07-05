@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     # OCR 백엔드 식별자(교체 가능). 기본 stub — 실제 백엔드는 리서치 후 선택.
     ocr_backend: str = Field(default="stub", alias="OCR_BACKEND")
 
+    # 대화형 에이전트 체크포인터 백엔드: "memory"(기본, DB 불필요) | "postgres".
+    # Postgres는 마이그레이션/체크포인터 테이블 준비 후 전환한다.
+    agent_checkpointer: str = Field(default="memory", alias="AGENT_CHECKPOINTER")
+
     # 인증 (로컬 JWT). 운영 환경에서는 JWT_SECRET를 반드시 교체할 것.
     jwt_secret: str = Field(
         default="dev-insecure-secret-change-me-in-production-please",

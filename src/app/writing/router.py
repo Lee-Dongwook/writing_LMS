@@ -1,15 +1,23 @@
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Any
+from uuid import uuid4
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 
 from src.app.ocr.base import OcrError, OcrProvider
 from src.app.ocr.factory import get_ocr_provider
 from src.app.ocr.schema import OcrResult
+from src.app.writing.agent import ingest_passage, resume_review, send_message
 from src.app.writing.analyze import run_analysis
 from src.app.writing.pdf import PdfError, extract_pdf_text
-from src.app.writing.schema import AnalyzeRequest, AnalyzeResponse
+from src.app.writing.schema import (
+    AgentTurnResponse,
+    AnalyzeRequest,
+    AnalyzeResponse,
+    ChatRequest,
+    ResumeRequest,
+)
 
 router = APIRouter(prefix="/writing", tags=["writing"])
 
@@ -150,3 +158,71 @@ async def analyze_pdf(
             detail="PDF에서 텍스트를 추출하지 못했습니다.",
         )
     return await run_analysis(passage)
+
+
+# --- 대화형 에이전트(human-in-the-loop) ---------------------------------------
+
+
+def _turn_response(result: dict[str, Any]) -> AgentTurnResponse:
+    """에이전트 실행 결과 dict를 API 응답 모델로 변환한다."""
+    return AgentTurnResponse(
+        thread_uuid=result["thread_id"],
+        status=result["status"],
+        reply=result.get("reply"),
+        interrupt=result.get("interrupt"),
+        analysis=result.get("analysis"),
+    )
+
+
+async def _extract_any(file: UploadFile, provider: OcrProvider) -> str:
+    """이미지/PDF 파일에서 지문 텍스트를 추출한다(대화 업로드 경로)."""
+    content_type = (file.content_type or "").lower()
+    if content_type in _ALLOWED_PDF_TYPES:
+        passage, _ = await _extract_pdf(file, provider)
+        return passage
+    return await _extract_text(file, provider)
+
+
+@router.post(
+    "/chat",
+    response_model=AgentTurnResponse,
+    status_code=status.HTTP_200_OK,
+    summary="대화형 분석: 메시지 전송(신규/기존 스레드)",
+)
+async def chat(payload: ChatRequest) -> AgentTurnResponse:
+    thread_uuid = payload.thread_uuid or uuid4().hex
+    result = await send_message(thread_uuid, payload.message)
+    return _turn_response(result)
+
+
+@router.post(
+    "/chat/upload",
+    response_model=AgentTurnResponse,
+    status_code=status.HTTP_200_OK,
+    summary="대화 중 파일 업로드 → 지문 추출 → 분석(리뷰 게이트)",
+)
+async def chat_upload(
+    provider: OcrDep,
+    file: Annotated[UploadFile, File(description="지문 이미지 또는 PDF")],
+    thread_uuid: Annotated[str | None, Form(description="이어갈 스레드(없으면 신규)")] = None,
+) -> AgentTurnResponse:
+    passage = await _extract_any(file, provider)
+    if not passage.strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="파일에서 텍스트를 추출하지 못했습니다.",
+        )
+    thread = thread_uuid or uuid4().hex
+    result = await ingest_passage(thread, passage)
+    return _turn_response(result)
+
+
+@router.post(
+    "/chat/resume",
+    response_model=AgentTurnResponse,
+    status_code=status.HTTP_200_OK,
+    summary="리뷰 게이트 재개(승인 또는 수정 지시)",
+)
+async def chat_resume(payload: ResumeRequest) -> AgentTurnResponse:
+    result = await resume_review(payload.thread_uuid, payload.decision)
+    return _turn_response(result)
