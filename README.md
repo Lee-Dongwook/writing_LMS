@@ -47,18 +47,18 @@ make install        # uv sync
 
 `.env`(개발) 또는 `.env.local`(로컬)에 설정한다. 주요 값:
 
-| 변수                          | 기본값                                                              | 설명                                     |
-| ----------------------------- | ------------------------------------------------------------------- | ---------------------------------------- |
-| `ENV`                         | `development`                                                       | 실행 환경 (development/local/production) |
-| `DATABASE_URL`                | `postgresql+psycopg://postgres:postgres@localhost:5432/writing_lms` | SQLAlchemy 비동기 DSN                    |
-| `JWT_SECRET`                  | (개발용 기본값)                                                     | **운영에서 반드시 교체**                 |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | `1440`                                                              | 액세스 토큰 만료(분)                     |
-| `LLM_MODEL`                   | `openai:gpt-4o-mini`                                                | `init_chat_model` "provider:model" 규격  |
-| `LLM_TEMPERATURE`             | `0.3`                                                               | 분석 생성 온도                           |
-| `OCR_BACKEND`                 | `stub`                                                              | OCR 백엔드 식별자                        |
+| 변수                          | 기본값                                                              | 설명                                          |
+| ----------------------------- | ------------------------------------------------------------------- | --------------------------------------------- |
+| `ENV`                         | `development`                                                       | 실행 환경 (development/local/production)      |
+| `DATABASE_URL`                | `postgresql+psycopg://postgres:postgres@localhost:5432/writing_lms` | SQLAlchemy 비동기 DSN                         |
+| `JWT_SECRET`                  | (개발용 기본값)                                                     | **운영에서 반드시 교체**                      |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | `1440`                                                              | 액세스 토큰 만료(분)                          |
+| `LLM_MODEL`                   | `openai:gpt-4o-mini`                                                | `init_chat_model` "provider:model" 규격       |
+| `LLM_TEMPERATURE`             | `0.3`                                                               | 분석 생성 온도                                |
+| `OCR_BACKEND`                 | `stub`                                                              | OCR 백엔드 식별자                             |
 | `AGENT_CHECKPOINTER`          | `memory`                                                            | 대화 에이전트 체크포인터(`memory`/`postgres`) |
-| `OLLAMA_HOST`                 | `http://localhost:11434`                                           | 로컬 LLM(ollama) base_url                |
-| `CORS_ORIGINS`                | `*`                                                                 | 콤마 구분 허용 오리진                    |
+| `OLLAMA_HOST`                 | `http://localhost:11434`                                            | 로컬 LLM(ollama) base_url                     |
+| `CORS_ORIGINS`                | `*`                                                                 | 콤마 구분 허용 오리진                         |
 
 > 라이브 LLM 실행에는 선택한 프로바이더의 API 키(예: `OPENAI_API_KEY`)가 필요하다.
 

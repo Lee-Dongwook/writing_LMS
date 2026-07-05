@@ -1,14 +1,23 @@
 from __future__ import annotations
 
-from typing import Annotated, Any
+import json
+from typing import TYPE_CHECKING, Annotated, Any
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi.responses import StreamingResponse
 
 from src.app.ocr.base import OcrError, OcrProvider
 from src.app.ocr.factory import get_ocr_provider
 from src.app.ocr.schema import OcrResult
-from src.app.writing.agent import ingest_passage, resume_review, send_message
+from src.app.writing.agent import (
+    astream_ingest,
+    astream_message,
+    astream_resume,
+    ingest_passage,
+    resume_review,
+    send_message,
+)
 from src.app.writing.analyze import run_analysis
 from src.app.writing.pdf import PdfError, extract_pdf_text
 from src.app.writing.schema import (
@@ -19,7 +28,17 @@ from src.app.writing.schema import (
     ResumeRequest,
 )
 
+if TYPE_CHECKING:
+    from collections.abc import AsyncGenerator
+
 router = APIRouter(prefix="/writing", tags=["writing"])
+
+# SSE 응답 공통 헤더(프록시 버퍼링 방지 + 스트림 유지).
+_SSE_HEADERS = {
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
+    "X-Accel-Buffering": "no",
+}
 
 # 허용 이미지 MIME 타입
 _ALLOWED_IMAGE_TYPES = frozenset(
@@ -226,3 +245,66 @@ async def chat_upload(
 async def chat_resume(payload: ResumeRequest) -> AgentTurnResponse:
     result = await resume_review(payload.thread_uuid, payload.decision)
     return _turn_response(result)
+
+
+# --- SSE 스트리밍 엔드포인트 ---------------------------------------------------
+# 이벤트 프레임: `event: <name>\n` + `data: <json>\n\n`. 클라이언트는 EventSource로
+# run_started → message_chunk* → (interrupt) → run_finished / run_error를 수신한다.
+
+
+def _sse_frame(event: dict[str, Any]) -> str:
+    """표준 이벤트 dict를 SSE 텍스트 프레임으로 직렬화한다(UTF-8, ensure_ascii=False)."""
+    name = event.get("event", "message")
+    data = json.dumps(event.get("data", {}), ensure_ascii=False)
+    return f"event: {name}\ndata: {data}\n\n"
+
+
+def _sse_response(events: AsyncGenerator[dict[str, Any]]) -> StreamingResponse:
+    async def _frames() -> AsyncGenerator[str]:
+        async for event in events:
+            yield _sse_frame(event)
+
+    return StreamingResponse(
+        _frames(),
+        media_type="text/event-stream",
+        headers=_SSE_HEADERS,
+    )
+
+
+@router.post(
+    "/chat/stream",
+    status_code=status.HTTP_200_OK,
+    summary="대화형 분석(SSE): 메시지 전송 → 토큰/인터럽트 스트리밍",
+)
+async def chat_stream(payload: ChatRequest) -> StreamingResponse:
+    thread_uuid = payload.thread_uuid or uuid4().hex
+    return _sse_response(astream_message(thread_uuid, payload.message))
+
+
+@router.post(
+    "/chat/upload/stream",
+    status_code=status.HTTP_200_OK,
+    summary="대화 중 파일 업로드 → 지문 추출 → 분석(SSE)",
+)
+async def chat_upload_stream(
+    provider: OcrDep,
+    file: Annotated[UploadFile, File(description="지문 이미지 또는 PDF")],
+    thread_uuid: Annotated[str | None, Form(description="이어갈 스레드(없으면 신규)")] = None,
+) -> StreamingResponse:
+    passage = await _extract_any(file, provider)
+    if not passage.strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="파일에서 텍스트를 추출하지 못했습니다.",
+        )
+    thread = thread_uuid or uuid4().hex
+    return _sse_response(astream_ingest(thread, passage))
+
+
+@router.post(
+    "/chat/resume/stream",
+    status_code=status.HTTP_200_OK,
+    summary="리뷰 게이트 재개(SSE)",
+)
+async def chat_resume_stream(payload: ResumeRequest) -> StreamingResponse:
+    return _sse_response(astream_resume(payload.thread_uuid, payload.decision))

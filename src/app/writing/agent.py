@@ -4,7 +4,7 @@ import logging
 from functools import lru_cache
 from typing import TYPE_CHECKING, Annotated, Any
 
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import InjectedToolCallId, tool
 from langgraph.checkpoint.memory import MemorySaver
@@ -17,6 +17,8 @@ from src.app.writing.analyze import revise_analysis, run_analysis
 from src.app.writing.schema import AnalyzeResponse
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncGenerator
+
     from langchain_core.language_models import BaseChatModel
     from langgraph.checkpoint.base import BaseCheckpointSaver
     from langgraph.graph.state import CompiledStateGraph
@@ -276,3 +278,90 @@ async def resume_review(
     active = graph or get_writing_agent()
     await active.ainvoke(Command(resume=decision), _config(thread_id))
     return await _finalize(active, thread_id)
+
+
+# --- SSE 스트리밍 -------------------------------------------------------------
+# 내부 표준 이벤트(snake_case)로 그래프 실행을 스트리밍한다. doc/pipeline_service
+# 의 이벤트 어휘(run_started / message_chunk / interrupt / run_finished / run_error)를
+# 대화형 에이전트에 맞춰 재사용한다. SSE 포맷팅(event/data 라인)은 라우터가 담당한다.
+
+
+async def _astream_turn(
+    active: CompiledStateGraph,
+    thread_id: str,
+    graph_input: Any,  # noqa: ANN401 - dict(state) 또는 Command(resume)
+) -> AsyncGenerator[dict[str, Any]]:
+    """그래프 한 턴을 스트리밍하며 표준 이벤트 dict를 순차 방출한다.
+
+    - `message_chunk`: 에이전트 자연어 응답 토큰(빈 청크·툴콜 청크 제외).
+    - `interrupt`: 리뷰 게이트 인터럽트 페이로드(분석 초안 포함).
+    - `run_started` / `run_finished`(최종 스냅샷 요약) / `run_error`(예외).
+    """
+    config = _config(thread_id)
+    yield {"event": "run_started", "data": {"thread_uuid": thread_id}}
+    try:
+        async for mode, chunk in active.astream(
+            graph_input,
+            config,
+            stream_mode=["messages", "updates"],
+        ):
+            if mode == "messages":
+                message, _meta = chunk
+                if isinstance(message, AIMessageChunk) and message.content:
+                    yield {
+                        "event": "message_chunk",
+                        "data": {"content": message.content, "message_id": message.id},
+                    }
+            elif mode == "updates" and isinstance(chunk, dict):
+                interrupts = chunk.get("__interrupt__")
+                if interrupts:
+                    yield {"event": "interrupt", "data": interrupts[0].value}
+    except Exception as exc:  # noqa: BLE001 - 스트림은 오류를 이벤트로 전달하고 종료
+        logger.exception("writing 에이전트 스트리밍 중 오류")
+        yield {"event": "run_error", "data": {"message": str(exc)}}
+        return
+
+    yield {"event": "run_finished", "data": await _finalize(active, thread_id)}
+
+
+async def astream_message(
+    thread_id: str,
+    message: str,
+    graph: CompiledStateGraph | None = None,
+) -> AsyncGenerator[dict[str, Any]]:
+    """`send_message`의 스트리밍 버전: 텍스트 메시지를 보내고 이벤트를 스트리밍한다."""
+    active = graph or get_writing_agent()
+    async for event in _astream_turn(
+        active,
+        thread_id,
+        {"messages": [HumanMessage(content=message)]},
+    ):
+        yield event
+
+
+async def astream_ingest(
+    thread_id: str,
+    passage: str,
+    note: str | None = None,
+    graph: CompiledStateGraph | None = None,
+) -> AsyncGenerator[dict[str, Any]]:
+    """`ingest_passage`의 스트리밍 버전: 추출된 지문 분석을 스트리밍한다."""
+    active = graph or get_writing_agent()
+    prompt = note or f"[첨부 지문 접수: {len(passage)}자] 이 지문을 분석해 주세요."
+    async for event in _astream_turn(
+        active,
+        thread_id,
+        {"messages": [HumanMessage(content=prompt)], "pending_passage": passage},
+    ):
+        yield event
+
+
+async def astream_resume(
+    thread_id: str,
+    decision: str,
+    graph: CompiledStateGraph | None = None,
+) -> AsyncGenerator[dict[str, Any]]:
+    """`resume_review`의 스트리밍 버전: 리뷰 게이트 재개를 스트리밍한다."""
+    active = graph or get_writing_agent()
+    async for event in _astream_turn(active, thread_id, Command(resume=decision)):
+        yield event
