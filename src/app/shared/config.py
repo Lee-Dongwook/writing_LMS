@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     llm_temperature: float = Field(default=0.3, alias="LLM_TEMPERATURE")
     openai_api_key: str | None = Field(default=None, alias="OPENAI_API_KEY")
 
+    # Ollama(로컬 LLM). LLM_MODEL이 "ollama:..."일 때 base_url로 주입된다.
+    ollama_host: str = Field(default="http://localhost:11434", alias="OLLAMA_HOST")
+
     # OCR 백엔드 식별자(교체 가능). 기본 stub — 실제 백엔드는 리서치 후 선택.
     ocr_backend: str = Field(default="stub", alias="OCR_BACKEND")
 

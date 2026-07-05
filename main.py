@@ -8,6 +8,7 @@ from scalar_fastapi import get_scalar_api_reference
 
 from src.app import models  # noqa: F401  # 모델 매퍼 레지스트리 등록
 from src.app.auth.router import router as auth_router
+from src.app.llm.router import router as llm_router
 from src.app.shared import init as shared_init
 from src.app.shared.exceptions import global_exception_handler
 from src.app.shared.logging import setup_logging
@@ -37,6 +38,7 @@ setup_middleware(app)
 
 app.include_router(auth_router)
 app.include_router(writing_router)
+app.include_router(llm_router)
 
 
 @app.get("/openapi.yaml", include_in_schema=False)
