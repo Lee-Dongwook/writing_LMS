@@ -7,6 +7,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import StreamingResponse
 
+from src.app.auth.dependencies import CurrentUser
 from src.app.ocr.base import OcrError, OcrProvider
 from src.app.ocr.factory import get_ocr_provider
 from src.app.ocr.schema import OcrResult
@@ -107,9 +108,7 @@ async def _extract_pdf(file: UploadFile, provider: OcrProvider) -> tuple[str, st
     status_code=status.HTTP_200_OK,
     summary="비문학 지문 분석(도메인 분류 → 렌즈 튜닝 → 중심문장/요약/어휘)",
 )
-async def analyze(payload: AnalyzeRequest) -> AnalyzeResponse:
-    # TODO(auth): 릴리스 전 CurrentUser 의존성으로 보호할 것.
-    # v1은 DB/로그인 없이 데모 가능하도록 공개 상태로 둔다.
+async def analyze(user: CurrentUser, payload: AnalyzeRequest) -> AnalyzeResponse:
     return await run_analysis(payload.passage)
 
 
@@ -120,6 +119,7 @@ async def analyze(payload: AnalyzeRequest) -> AnalyzeResponse:
     summary="이미지 지문 OCR (이미지 → 텍스트)",
 )
 async def ocr(
+    user: CurrentUser,
     provider: OcrDep,
     file: Annotated[UploadFile, File(description="지문 이미지 파일")],
 ) -> OcrResult:
@@ -134,6 +134,7 @@ async def ocr(
     summary="이미지 지문 → OCR → 도메인 분류 → 분석",
 )
 async def analyze_image(
+    user: CurrentUser,
     provider: OcrDep,
     file: Annotated[UploadFile, File(description="지문 이미지 파일")],
 ) -> AnalyzeResponse:
@@ -153,6 +154,7 @@ async def analyze_image(
     summary="PDF 지문 텍스트 추출(텍스트 레이어 우선, 스캔본은 OCR 폴백)",
 )
 async def pdf_extract(
+    user: CurrentUser,
     provider: OcrDep,
     file: Annotated[UploadFile, File(description="지문 PDF 파일")],
 ) -> OcrResult:
@@ -167,6 +169,7 @@ async def pdf_extract(
     summary="PDF 지문 → 텍스트 추출 → 도메인 분류 → 분석",
 )
 async def analyze_pdf(
+    user: CurrentUser,
     provider: OcrDep,
     file: Annotated[UploadFile, File(description="지문 PDF 파일")],
 ) -> AnalyzeResponse:
@@ -182,10 +185,24 @@ async def analyze_pdf(
 # --- 대화형 에이전트(human-in-the-loop) ---------------------------------------
 
 
-def _turn_response(result: dict[str, Any]) -> AgentTurnResponse:
-    """에이전트 실행 결과 dict를 API 응답 모델로 변환한다."""
+def _thread_key(user: CurrentUser, client_thread: str) -> str:
+    """클라이언트 스레드 식별자를 사용자 네임스페이스로 격리한다.
+
+    체크포인터 thread_id를 `{user_uuid}:{client_thread}`로 구성하면, 다른 사용자가
+    같은 client_thread 값을 제시해도 서로 다른 스레드로 매핑되어 접근이 차단된다.
+    DB 소유권 테이블 없이 스레드를 사용자에 귀속시키는 경량 방식.
+    """
+    return f"{user.uuid}:{client_thread}"
+
+
+def _turn_response(result: dict[str, Any], client_thread: str) -> AgentTurnResponse:
+    """에이전트 실행 결과 dict를 API 응답 모델로 변환한다.
+
+    `thread_uuid`는 내부 네임스페이스를 제거한 클라이언트 식별자로 되돌려준다
+    (사용자 uuid 노출 방지 + 재개 시 동일 값 재사용).
+    """
     return AgentTurnResponse(
-        thread_uuid=result["thread_id"],
+        thread_uuid=client_thread,
         status=result["status"],
         reply=result.get("reply"),
         interrupt=result.get("interrupt"),
@@ -208,10 +225,10 @@ async def _extract_any(file: UploadFile, provider: OcrProvider) -> str:
     status_code=status.HTTP_200_OK,
     summary="대화형 분석: 메시지 전송(신규/기존 스레드)",
 )
-async def chat(payload: ChatRequest) -> AgentTurnResponse:
-    thread_uuid = payload.thread_uuid or uuid4().hex
-    result = await send_message(thread_uuid, payload.message)
-    return _turn_response(result)
+async def chat(user: CurrentUser, payload: ChatRequest) -> AgentTurnResponse:
+    client_thread = payload.thread_uuid or uuid4().hex
+    result = await send_message(_thread_key(user, client_thread), payload.message)
+    return _turn_response(result, client_thread)
 
 
 @router.post(
@@ -221,6 +238,7 @@ async def chat(payload: ChatRequest) -> AgentTurnResponse:
     summary="대화 중 파일 업로드 → 지문 추출 → 분석(리뷰 게이트)",
 )
 async def chat_upload(
+    user: CurrentUser,
     provider: OcrDep,
     file: Annotated[UploadFile, File(description="지문 이미지 또는 PDF")],
     thread_uuid: Annotated[str | None, Form(description="이어갈 스레드(없으면 신규)")] = None,
@@ -231,9 +249,9 @@ async def chat_upload(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="파일에서 텍스트를 추출하지 못했습니다.",
         )
-    thread = thread_uuid or uuid4().hex
-    result = await ingest_passage(thread, passage)
-    return _turn_response(result)
+    client_thread = thread_uuid or uuid4().hex
+    result = await ingest_passage(_thread_key(user, client_thread), passage)
+    return _turn_response(result, client_thread)
 
 
 @router.post(
@@ -242,9 +260,9 @@ async def chat_upload(
     status_code=status.HTTP_200_OK,
     summary="리뷰 게이트 재개(승인 또는 수정 지시)",
 )
-async def chat_resume(payload: ResumeRequest) -> AgentTurnResponse:
-    result = await resume_review(payload.thread_uuid, payload.decision)
-    return _turn_response(result)
+async def chat_resume(user: CurrentUser, payload: ResumeRequest) -> AgentTurnResponse:
+    result = await resume_review(_thread_key(user, payload.thread_uuid), payload.decision)
+    return _turn_response(result, payload.thread_uuid)
 
 
 # --- SSE 스트리밍 엔드포인트 ---------------------------------------------------
@@ -276,9 +294,9 @@ def _sse_response(events: AsyncGenerator[dict[str, Any]]) -> StreamingResponse:
     status_code=status.HTTP_200_OK,
     summary="대화형 분석(SSE): 메시지 전송 → 토큰/인터럽트 스트리밍",
 )
-async def chat_stream(payload: ChatRequest) -> StreamingResponse:
-    thread_uuid = payload.thread_uuid or uuid4().hex
-    return _sse_response(astream_message(thread_uuid, payload.message))
+async def chat_stream(user: CurrentUser, payload: ChatRequest) -> StreamingResponse:
+    client_thread = payload.thread_uuid or uuid4().hex
+    return _sse_response(astream_message(_thread_key(user, client_thread), payload.message))
 
 
 @router.post(
@@ -287,6 +305,7 @@ async def chat_stream(payload: ChatRequest) -> StreamingResponse:
     summary="대화 중 파일 업로드 → 지문 추출 → 분석(SSE)",
 )
 async def chat_upload_stream(
+    user: CurrentUser,
     provider: OcrDep,
     file: Annotated[UploadFile, File(description="지문 이미지 또는 PDF")],
     thread_uuid: Annotated[str | None, Form(description="이어갈 스레드(없으면 신규)")] = None,
@@ -297,8 +316,8 @@ async def chat_upload_stream(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="파일에서 텍스트를 추출하지 못했습니다.",
         )
-    thread = thread_uuid or uuid4().hex
-    return _sse_response(astream_ingest(thread, passage))
+    client_thread = thread_uuid or uuid4().hex
+    return _sse_response(astream_ingest(_thread_key(user, client_thread), passage))
 
 
 @router.post(
@@ -306,5 +325,7 @@ async def chat_upload_stream(
     status_code=status.HTTP_200_OK,
     summary="리뷰 게이트 재개(SSE)",
 )
-async def chat_resume_stream(payload: ResumeRequest) -> StreamingResponse:
-    return _sse_response(astream_resume(payload.thread_uuid, payload.decision))
+async def chat_resume_stream(user: CurrentUser, payload: ResumeRequest) -> StreamingResponse:
+    return _sse_response(
+        astream_resume(_thread_key(user, payload.thread_uuid), payload.decision),
+    )
