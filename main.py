@@ -1,4 +1,7 @@
+import logging
 import os
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 
 import uvicorn
 import yaml
@@ -10,9 +13,12 @@ from src.app import models  # noqa: F401  # 모델 매퍼 레지스트리 등록
 from src.app.auth.router import router as auth_router
 from src.app.llm.router import router as llm_router
 from src.app.shared import init as shared_init
+from src.app.shared.config import get_settings
+from src.app.shared.database import checkpointer_pool
 from src.app.shared.exceptions import global_exception_handler
 from src.app.shared.logging import setup_logging
 from src.app.shared.middleware import setup_middleware
+from src.app.writing.agent import build_writing_agent, set_active_agent
 from src.app.writing.router import router as writing_router
 
 env_type = os.getenv("ENV", "development")
@@ -22,11 +28,34 @@ setup_logging()
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
+logger = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
+    """앱 수명 주기: AGENT_CHECKPOINTER=postgres면 풀 기반 체크포인터를 배선한다.
+
+    Postgres면 lifespan 동안 커넥션 풀을 유지하며 그걸로 컴파일한 대화 에이전트를
+    런타임에 주입(재시작해도 스레드 유지). memory면 기존 인메모리로 동작한다.
+    """
+    settings = get_settings()
+    if settings.agent_checkpointer == "postgres":
+        logger.info("Postgres 체크포인터로 대화 에이전트 배선")
+        async with checkpointer_pool() as saver:
+            set_active_agent(build_writing_agent(checkpointer=saver))
+            try:
+                yield
+            finally:
+                set_active_agent(None)
+    else:
+        yield
+
 
 app = FastAPI(
     title="Writing LMS API",
     description="Writing LMS API",
     version="0.1.0",
+    lifespan=lifespan,
     swagger_ui_init_oauth={
         "appName": "Writing LMS",
         "usePkceWithAuthorizationCodeGrant": True,

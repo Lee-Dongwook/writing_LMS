@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-from functools import lru_cache
 from typing import TYPE_CHECKING, Annotated, Any
 
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
@@ -197,14 +196,34 @@ def build_writing_agent(
 
 
 # 인메모리 체크포인터는 프로세스 내 스레드 상태를 유지하므로 싱글턴으로 둔다.
-# (Postgres 전환 시 shared.database.get_checkpoint 로 교체)
+# Postgres 체크포인터는 앱 lifespan에서 set_active_agent()로 주입된다
+# (shared.database.checkpointer_pool → build_writing_agent(checkpointer=...)).
 _MEMORY_SAVER = MemorySaver()
 
+# 런타임 활성 에이전트. None이면 인메모리로 지연 생성한다.
+_active_agent: CompiledStateGraph | None = None
 
-@lru_cache
+
+def set_active_agent(graph: CompiledStateGraph | None) -> None:
+    """런타임 활성 에이전트를 지정/해제한다.
+
+    앱 lifespan에서 Postgres 체크포인터로 컴파일한 그래프를 주입하는 데 쓴다.
+    None으로 해제하면 이후 호출에서 인메모리 그래프를 다시 지연 생성한다.
+    """
+    global _active_agent
+    _active_agent = graph
+
+
 def get_writing_agent() -> CompiledStateGraph:
-    """런타임용 컴파일된 에이전트(설정 모델 + 인메모리 체크포인터)."""
-    return build_writing_agent()
+    """런타임용 컴파일된 에이전트.
+
+    lifespan이 Postgres 그래프를 주입했으면 그것을, 아니면 인메모리 그래프를
+    지연 생성해 반환한다.
+    """
+    global _active_agent
+    if _active_agent is None:
+        _active_agent = build_writing_agent()
+    return _active_agent
 
 
 def _config(thread_id: str) -> RunnableConfig:

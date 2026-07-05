@@ -5,6 +5,7 @@ from functools import lru_cache
 from typing import TYPE_CHECKING
 
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from psycopg_pool import AsyncConnectionPool
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -72,11 +73,33 @@ async def async_context_session() -> AsyncGenerator[AsyncSession]:
 
 @asynccontextmanager
 async def get_checkpoint() -> AsyncGenerator[AsyncPostgresSaver]:
-    """LangGraph 파이프라인용 Postgres 체크포인터 컨텍스트.
+    """단발성(스크립트/일회성)용 Postgres 체크포인터 컨텍스트.
 
-    최초 사용 전 테이블 준비는 `AsyncPostgresSaver.setup()`으로 수행한다
-    (마이그레이션 레이어가 준비되면 그쪽으로 이관 예정).
+    단일 커넥션 기반. 테이블 준비는 `AsyncPostgresSaver.setup()`으로 수행한다.
+    앱 런타임의 장수(long-lived) 체크포인터는 `checkpointer_pool()`을 사용한다.
     """
     settings = get_settings()
     async with AsyncPostgresSaver.from_conn_string(settings.checkpoint_dsn) as checkpointer:
+        yield checkpointer
+
+
+@asynccontextmanager
+async def checkpointer_pool() -> AsyncGenerator[AsyncPostgresSaver]:
+    """앱 수명 동안 유지되는 커넥션 풀 기반 Postgres 체크포인터.
+
+    FastAPI lifespan에서 열고 종료 시 닫는다. 진입 시 체크포인터 스키마를
+    `setup()`으로 보장한다(idempotent). 동시 요청은 풀(max_size)로 처리한다.
+    """
+    settings = get_settings()
+    # langgraph AsyncPostgresSaver 요구사항: autocommit + prepared statement 비활성.
+    conn_kwargs = {"autocommit": True, "prepare_threshold": 0}
+    pool = AsyncConnectionPool(
+        conninfo=settings.checkpoint_dsn,
+        max_size=20,
+        open=False,
+        kwargs=conn_kwargs,
+    )
+    async with pool:
+        checkpointer = AsyncPostgresSaver(pool)
+        await checkpointer.setup()
         yield checkpointer
