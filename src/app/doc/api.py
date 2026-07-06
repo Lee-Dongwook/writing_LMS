@@ -1,126 +1,228 @@
-import logging
+from __future__ import annotations
 
-from fastapi import APIRouter, Depends, status, Request, HTTPException
+import json
+import logging
+from typing import TYPE_CHECKING, Annotated, Any
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import StreamingResponse
 from pydantic import TypeAdapter, ValidationError
+
+from src.app.auth.dependencies import verify_token
+from src.app.doc.forms import create_dynamic_model_from_elements
+from src.app.doc.pipeline_service import run_pipeline
+from src.app.doc.schema import PipeLine
+from src.app.doc.service import get_doc_by_uuid
+from src.app.shared.database import get_async_db, get_checkpoint
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncGenerator
+
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from src.app.user.schema import UserRead
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/doc", tags=["doc"])
 
+# SSE 공통 헤더(프록시 버퍼링 방지 + 스트림 유지).
+_SSE_HEADERS = {
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
+    "X-Accel-Buffering": "no",
+}
+
+
+async def get_request_payload(request: Request) -> dict[str, Any]:
+    """요청 본문을 dict로 파싱한다(JSON 우선, 폼 데이터 폴백)."""
+    content_type = request.headers.get("content-type", "")
+    if "application/json" in content_type:
+        try:
+            data = await request.json()
+        except (json.JSONDecodeError, ValueError):
+            data = {}
+        return data if isinstance(data, dict) else {}
+    if "multipart/form-data" in content_type or "x-www-form-urlencoded" in content_type:
+        return dict(await request.form())
+    try:
+        data = await request.json()
+    except (json.JSONDecodeError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _sse_frame(event: dict[str, Any]) -> str:
+    """표준 이벤트 dict를 SSE 텍스트 프레임으로 직렬화한다."""
+    name = event.get("event", "message")
+    data = json.dumps(event.get("data", {}), ensure_ascii=False)
+    return f"event: {name}\ndata: {data}\n\n"
+
+
+def _validate_payload(
+    validation_model: type,
+    payload: dict[str, Any],
+    partial: bool,
+) -> dict[str, Any]:
+    """동적 모델로 payload를 검증한다. partial이면 제출된 필드만(재개용) 검증."""
+    if not partial:
+        return validation_model.model_validate(payload).model_dump()
+
+    allowed = set(validation_model.model_fields.keys())
+    validated: dict[str, Any] = {}
+    errors: list[dict[str, Any]] = []
+    for key, value in payload.items():
+        if key not in allowed:
+            continue
+        field = validation_model.model_fields[key]
+        try:
+            validated[key] = TypeAdapter(field.annotation).validate_python(value)
+        except ValidationError as exc:
+            errors.extend(
+                {
+                    "loc": [key, *err.get("loc", ())],
+                    "msg": err["msg"],
+                    "type": err["type"],
+                }
+                for err in exc.errors()
+            )
+    if errors:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=errors
+        )
+    return validated
+
+
 @router.post(
     "/{doc_uuid}/dynamic_submit",
-    summary="Submit data to a dynamic form based doc's style",
-    status_code=status.HTTP_200_OK
+    summary="동적 폼 기반 문서 제출 → 파이프라인 실행(신규/재개, SSE 지원)",
+    status_code=status.HTTP_200_OK,
 )
 async def submit_dynamic_form_endpoint(
     doc_uuid: str,
     request: Request,
-    payload: dict = Depends(get_request_payload),
-    user: UserRead = Depends(verify_token),
-    db: AsyncSession = Depends(get_async_db),
-    thread_uuid: str | None = Query(None, alias="thread_uuid"),
-) -> Response:
+    user: Annotated[UserRead, Depends(verify_token)],
+    db: Annotated[AsyncSession, Depends(get_async_db)],
+    thread_uuid: Annotated[str | None, Query()] = None,
+) -> Any:
     document = await get_doc_by_uuid(doc_uuid, user.uuid, db)
     if not document:
-        raise HTTPException(status_code=404, detail="Document not found")
-    try:
-        validation_model = create_dynamic_model_from_elements(
-            f"DynamicFormModel_{doc_uuid}", doc.inputs,
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Document not found"
         )
 
-        if thread_uuid:
-            allowed_keys = set(validation_model.model_fields.keys())
-            validated_data = {}
+    payload = await get_request_payload(request)
 
-            errors = []
-            for k, v in payload.items():
-                if k in allowed_keys:
-                    try:
-                        field_info = validation_model.model_fields[k]
-                        adapter = TypeAdapter(field_info.annotation)
-                        validated_value = adapter.validate_python(v)
-                        validated_data[k] = validated_value
-                    except ValidationError as e:
-                        errors.extend([{"loc": [k, *err.get('loc',())], "msg": err['msg'], "type": err['type']} for err in e.errors()])
-            if errors:
-                raise HTTPException(status_code=422, detail=errors)
-        else:
-            validated_data = validation_model.model_validate(payload)
-    except ValidationError as e:
-        raise HTTPException(status_code=422, detail=e.errors()) from e
-    except Exception as e:
+    try:
+        validation_model = create_dynamic_model_from_elements(
+            f"DynamicFormModel_{doc_uuid}",
+            document.inputs,
+        )
+        final_payload = _validate_payload(
+            validation_model, payload, partial=bool(thread_uuid)
+        )
+    except HTTPException:
+        raise
+    except ValidationError as exc:
         raise HTTPException(
-            status_code=500, detail=f"Failed to create dynamic model: {e}",
-        ) from e
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=exc.errors(),
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"동적 모델 생성/검증 실패: {exc}",
+        ) from exc
 
-    final_payload = {}
-    if thread_uuid:
-        final_payload = validated_data
-    else:
-        try:
-            final_payload = await process_and_validate_files_from_payload(
-                payload=validated_data,
-                elements=doc.inputs,
-                user_uuid=str(user.uuid),
-            )
-        except HTTPException as e:
-            raise e
-        except Exception as e:
-            raise HTTPException(
-                 status_code=500, detail=f"An error occurred during file processing: {e}",
-            ) from e
-
-    pipeline = doc.pipeline
-    if not thread_uuid and not pipeline:
+    # 파이프라인 없는 신규 제출: 검증된 데이터만 반환.
+    if not thread_uuid and not document.pipeline:
         return {"status": "success", "processed_data": final_payload}
 
-    streaming = False
-    accept_header = request.headers.get("accept", "application/json")
+    if not document.pipeline:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="재개할 파이프라인이 문서에 정의되어 있지 않습니다.",
+        )
 
-    if "text/event-stream" in accept_header:
-        streaming = True
+    pipeline = PipeLine.model_validate(document.pipeline)
+    streaming = "text/event-stream" in request.headers.get("accept", "")
+    # 인터럽트/재개(다단계·기존 스레드)에는 체크포인터가 필요하다.
+    needs_checkpoint = bool(thread_uuid) or len(pipeline.steps) > 1
 
-    async def _run_in_context():
+    if streaming:
+        return StreamingResponse(
+            _stream_frames(
+                document.uuid,
+                pipeline,
+                final_payload,
+                user.uuid,
+                thread_uuid,
+                needs_checkpoint,
+            ),
+            media_type="text/event-stream",
+            headers=_SSE_HEADERS,
+        )
+
+    final_res: dict[str, Any] = {}
+    async for chunk in _run(
+        document.uuid,
+        pipeline,
+        final_payload,
+        user.uuid,
+        thread_uuid,
+        False,
+        needs_checkpoint,
+    ):
+        final_res = chunk
+    if final_res.get("status") == "pipeline_failed":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=final_res)
+    return final_res
+
+
+async def _run(
+    unique: str,
+    pipeline: PipeLine,
+    payload: dict[str, Any],
+    user_uuid: str,
+    thread_uuid: str | None,
+    streaming: bool,
+    needs_checkpoint: bool,
+) -> AsyncGenerator[dict[str, Any]]:
+    """체크포인터 컨텍스트(필요 시)에서 run_pipeline을 실행한다."""
+    if needs_checkpoint:
         async with get_checkpoint() as cp:
-            pipeline_response = run_pipeline(
-                unique=doc.uuid,
+            async for chunk in run_pipeline(
+                unique=unique,
                 pipeline=pipeline,
-                payload=final_payload,
-                user_uuid=user.uuid,
+                user_uuid=user_uuid,
+                payload=payload,
                 thread_uuid=thread_uuid,
                 streaming=streaming,
                 checkpointer=cp,
-            )
-
-            if streaming:
-                async for chunk in _stream_wrapper(pipeline_response):
-                    yield chunk
-            else:
-                # For non-streaming, we need to consume the generator to get the final result
-                final_res = {}
-                async for res in pipeline_response:
-                    final_res = res
-                yield final_res
-    if streaming:
-        return StreamingResponse(
-            content=_run_in_context(),
-            media_type="text/event-stream",
-            headers={
-                "Cache-Control": "no-cache",
-                "Connection": "keep-alive",
-                "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Headers": "Cache-Control",
-            },
-        )
+            ):
+                yield chunk
     else:
-        final_res = {}
-        async for chunk in _run_in_context():
-            final_res = chunk
+        async for chunk in run_pipeline(
+            unique=unique,
+            pipeline=pipeline,
+            user_uuid=user_uuid,
+            payload=payload,
+            thread_uuid=thread_uuid,
+            streaming=streaming,
+            checkpointer=None,
+        ):
+            yield chunk
 
-        # Check if the pipeline execution resulted in an error
-        if final_res.get("status") == "pipeline_failed":
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=final_res,
-            )
-    return final_res
 
+async def _stream_frames(
+    unique: str,
+    pipeline: PipeLine,
+    payload: dict[str, Any],
+    user_uuid: str,
+    thread_uuid: str | None,
+    needs_checkpoint: bool,
+) -> AsyncGenerator[str]:
+    """스트리밍 이벤트 dict를 SSE 프레임 문자열로 변환한다."""
+    async for event in _run(
+        unique, pipeline, payload, user_uuid, thread_uuid, True, needs_checkpoint
+    ):
+        yield _sse_frame(event)

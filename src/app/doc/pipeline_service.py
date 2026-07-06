@@ -1,181 +1,143 @@
-import json
+from __future__ import annotations
+
 import logging
+import re
 import time
-from collections.abc import AsyncGenerator, Callable
-from contextlib import asynccontextmanager
-from typing import Any, Protocol, runtime_checkable
-from unittest.mock import Mock
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
-from langchain_core.load.dump import dumps
 from langchain_core.messages import (
     AIMessage,
     AIMessageChunk,
-    AnyMessage,
-    ChatMessage,
     HumanMessage,
+    SystemMessage,
 )
-from langchain_core.runnables import RunnableConfig
-from langgraph.checkpoint.base import BaseCheckpointSaver
-from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.graph import END, StateGraph
-from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Command
 
+from src.app.doc.schema import AgentState, LLMCallAction, PipeLine, SimpleStep
+from src.app.llm.factory import get_chat_model
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncGenerator, Callable
+
+    from langchain_core.runnables import RunnableConfig
+    from langgraph.checkpoint.base import BaseCheckpointSaver
+    from langgraph.graph.state import CompiledStateGraph
 
 logger = logging.getLogger(__name__)
 
-@runtime_checkable
-class PipelineHandler(Protocol):
-    """
-    Protocol defining the interface for pipeline lifecycle handling.
-    """
+# 선형 그래프 빌더(structure 키 기준 캐시). 컴파일은 체크포인터/인터럽트가 요청마다
+# 달라질 수 있으므로 매 호출 수행한다(빌더 재사용으로 노드 구성 비용만 절감).
+_PIPELINE_BUILDER_CACHE: dict[str, StateGraph] = {}
 
-    async def on_completion(
-        self,
-        final_state: dict,
-        thread_id: str,
-        user_uuid: str,
-        checkpointer: BaseCheckpointSaver,
-    ) -> None:
-        """Called when the pipeline finishes or interrupts."""
-        ...
-
-class BasicPipeline(PipelineHandler):
-    async def on_completion(
-        self,
-        final_state: dict,
-        thread_id: str,
-        user_uuid: str,
-        checkpointer: BaseCheckpointSaver,
-    ) -> None:
-        if not (isinstance(checkpointer, AsyncPostgresSaver) and final_state.get("messages")):
-            return
-        last_message_id = None
-        async with async_context_session() as db:
-            thread = await select_thread_by_uuid(db, thread_id)
-            if thread is None:
-                title_message = final_state["messages"][0].content or "New Thread"
-                try:
-                    thread = await create_new_thread(user_uuid, title_message, thread_id, db)
-                except Exception as e:
-                    logger.error(f"Fail to create thread: {e}")
-
-            if thread is None:
-                logger.warning("Fail to create thread")
-                return
-
-            last_saved_message = await select_last_message_in_thread(db, thread_id)
-            if last_saved_message and "data" in last_saved_message.message:
-                last_message_id = last_saved_message.message["data"]["id"]
-
-            filtered_messages = _filterout_toolmessages(final_state["messages"], last_message_id)
-            logger.info(f"Total length of the saved messages = {len(filtered_messages)}")
-
-            conn = getattr(checkpointer, "conn", None)
-            if conn:
-                await _save_message(filtered_messages, thread_id, conn)
-
-_PIPELINE_GRAPH_CACHE = {}
+# 프롬프트 템플릿의 `{key}` 자리표시자 패턴.
+_PLACEHOLDER = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
 
 
-def _create_node_function(step: SimpleStep) -> Callable:
-    async def _node_wrapper(state: AgentState, config: RunnableConfig) -> dict:
-        logger.info(f"--- Executing Step Node: {step.name} ---")
-        action = step.action
+def render_template(template: str, values: dict[str, Any]) -> str:
+    """`{key}` 자리표시자를 상태값으로 치환한다. 없는 키는 원문 그대로 둔다."""
 
-        # Mock agent model needed for executors
-        mock_agent = Mock()
-        mock_agent.tools = []
+    def _sub(match: re.Match[str]) -> str:
+        key = match.group(1)
+        return str(values[key]) if key in values else match.group(0)
 
-        # reset error!!
-        state["values"]["error"] = None
-        try:
-            if action.action_type == "llm_call":
-                result = await execute_llm_call(action, state, config)
-                return {"values": {action.output_key: result}}
-            elif action.action_type == "tool_call":
-                result = await execute_tool_call(action, state, agent_model=mock_agent, config=config)
-                return {"values": {action.output_key: result}}
-            elif action.action_type == "agent_call":
-                user_uuid = config.get("configurable", {}).get("user_uuid") if config else None
-                resolver = DefaultSubAgentResolver()
-                resolved = await resolver.resolve({action.agent_slug}, user_uuid=user_uuid)
-                sub_agent_model = resolved.get(action.agent_slug)
-                if not sub_agent_model:
-                    raise ValueError(f"Sub-agent '{action.agent_slug}' not found or is disabled.")
-                return await execute_agent_call(
-                    action, state, config, sub_agent_model=sub_agent_model, resolver=resolver
-                )
-            else:
-                raise NotImplementedError(f"Action type '{action.action_type}' not supported.")
-        except Exception as e:
-            error_content = f"Error in step '{step.name}': {e}"
-            logger.error(error_content)
-            # Errors are typically captured in the state or handled by downstream nodes.
-            # but in this case, we should raise the error to pinpoint real cause of raise
-            raise e
-
-    return _node_wrapper
-
-
-def _create_graph_from_pipeline(unique: str, pipeline: PipeLine) -> CompiledStateGraph:
-    """
-    Dynamically builds a linear StateGraph from a PipeLine schema.
-    The graph is cached for performance.
-    """
-
-    # Create a unique key for the pipeline structure for caching
-    pipeline_structure_key = str(unique) + "-".join([s.name for s in pipeline.steps])
-    if pipeline_structure_key in _PIPELINE_GRAPH_CACHE:
-        logger.info("✈️ Cached graph served")
-        return _PIPELINE_GRAPH_CACHE[pipeline_structure_key]
-
-    graph = StateGraph(AgentState, GraphConfig)
-
-    # Add nodes for each step
-    for step in pipeline.steps:
-        graph.add_node(step.name, _create_node_function(step))
-
-    # Add edges to connect nodes in a linear sequence
-    if pipeline.steps:
-        graph.set_entry_point(pipeline.steps[0].name)
-        for i in range(len(pipeline.steps) - 1):
-            graph.add_edge(pipeline.steps[i].name, pipeline.steps[i+1].name)
-        # Add an edge from the last step to the end
-        graph.add_edge(pipeline.steps[-1].name, END)
-    else: # No steps, just start and end
-        graph.set_entry_point(END) # In an empty pipeline, it finishes immediately
-
-    if len(pipeline.steps) > 1:
-        # --- Set interrupt after every step ---
-        interrupt_nodes = [step.name for step in pipeline.steps[:-1]]
-        compiled_graph = graph.compile(name="doc_template_pipeline", interrupt_after=interrupt_nodes)
-    else:
-        # no interrupts for 1 step pipeline
-        compiled_graph = graph.compile(name="doc_template_pipeline")
-
-    _PIPELINE_GRAPH_CACHE[pipeline_structure_key] = compiled_graph
-    return compiled_graph
+    return _PLACEHOLDER.sub(_sub, template)
 
 
 def _prepare_payload_for_agent(payload: Any) -> Any:
-    """
-    Recursively processes the payload to replace FileInfo dicts with their file_url strings.
-    Agents expect direct file paths/URLs, not full FileInfo objects.
-    """
+    """FileInfo dict를 file_url 문자열로 치환해 프롬프트에서 바로 쓸 수 있게 한다."""
     if isinstance(payload, dict):
-        # Check if it looks like a FileInfo object (has 'file_url')
-        if "file_url" in payload and isinstance(payload["file_url"], str):
+        if isinstance(payload.get("file_url"), str):
             return payload["file_url"]
-
-        # Otherwise, recurse into the dict
         return {k: _prepare_payload_for_agent(v) for k, v in payload.items()}
-
-    elif isinstance(payload, list):
+    if isinstance(payload, list):
         return [_prepare_payload_for_agent(item) for item in payload]
-
     return payload
+
+
+# --- 액션 실행기 ----------------------------------------------------------------
+
+
+async def execute_llm_call(
+    action: LLMCallAction,
+    state: AgentState,
+    config: RunnableConfig,  # noqa: ARG001  # 시그니처 통일(향후 configurable 사용)
+) -> AIMessage:
+    """LLM 호출 액션을 실행한다. 프롬프트를 상태값으로 렌더링해 모델을 호출."""
+    values = state["values"]
+    messages: list[Any] = []
+    if action.system_prompt:
+        messages.append(
+            SystemMessage(content=render_template(action.system_prompt, values))
+        )
+    messages.append(HumanMessage(content=render_template(action.prompt, values)))
+
+    chat = get_chat_model(action.model)
+    result = await chat.ainvoke(messages)
+    return result if isinstance(result, AIMessage) else AIMessage(content=str(result))
+
+
+# --- 그래프 빌드 ----------------------------------------------------------------
+
+
+def _create_node_function(step: SimpleStep) -> Callable:
+    async def _node(state: AgentState, config: RunnableConfig) -> dict:
+        logger.info("--- 스텝 실행: %s ---", step.name)
+        action = step.action
+        if action.action_type == "llm_call":
+            result = await execute_llm_call(action, state, config)
+            return {"values": {action.output_key: result.content}, "messages": [result]}
+        # MVP는 llm_call만 지원. tool_call / agent_call은 후속 확장.
+        raise NotImplementedError(f"지원되지 않는 액션 타입: {action.action_type}")
+
+    return _node
+
+
+def _get_builder(unique: str, pipeline: PipeLine) -> StateGraph:
+    """스텝 구성으로 선형 StateGraph 빌더를 만든다(구조 키 기준 캐시)."""
+    structure_key = str(unique) + "-".join(s.name for s in pipeline.steps)
+    cached = _PIPELINE_BUILDER_CACHE.get(structure_key)
+    if cached is not None:
+        return cached
+
+    graph = StateGraph(AgentState)
+    for step in pipeline.steps:
+        graph.add_node(step.name, _create_node_function(step))
+
+    if pipeline.steps:
+        graph.set_entry_point(pipeline.steps[0].name)
+        for prev, nxt in zip(pipeline.steps, pipeline.steps[1:], strict=False):
+            graph.add_edge(prev.name, nxt.name)
+        graph.add_edge(pipeline.steps[-1].name, END)
+
+    _PIPELINE_BUILDER_CACHE[structure_key] = graph
+    return graph
+
+
+def _compile_pipeline(
+    unique: str,
+    pipeline: PipeLine,
+    checkpointer: BaseCheckpointSaver | None,
+) -> CompiledStateGraph:
+    """빌더를 체크포인터/인터럽트 설정과 함께 컴파일한다.
+
+    스텝이 2개 이상이면 각 스텝 이후 인터럽트(human-in-the-loop)를 건다.
+    인터럽트/재개에는 체크포인터가 필요하다.
+    """
+    builder = _get_builder(unique, pipeline)
+    interrupt_after = (
+        [s.name for s in pipeline.steps[:-1]] if len(pipeline.steps) > 1 else []
+    )
+    return builder.compile(
+        name="doc_pipeline",
+        checkpointer=checkpointer,
+        interrupt_after=interrupt_after,
+    )
+
+
+# --- 실행 ----------------------------------------------------------------------
+
 
 async def run_pipeline(
     unique: str,
@@ -184,393 +146,139 @@ async def run_pipeline(
     payload: dict | None = None,
     thread_uuid: str | None = None,
     streaming: bool = False,
-    protocol: str = "legacy",
     checkpointer: BaseCheckpointSaver | None = None,
-    handler: PipelineHandler | None = None,
-) -> AsyncGenerator[str | dict]:
+) -> AsyncGenerator[dict[str, Any]]:
+    """파이프라인 그래프를 초기화(신규)하거나 재개(thread_uuid)해 실행한다.
+
+    - streaming=True: 표준 이벤트(run_started/step_started/message_chunk/interrupt/
+      run_finished)를 순차적으로 방출한다.
+    - streaming=False: 최종 상태 dict 하나(pipeline_completed/interrupted/failed)를 방출한다.
     """
-    Initializes (if new) and runs a pipeline graph to completion.
-    Leverages LangGraph's checkpointing for automatic state management and resume.
-    """
-    thread_id = thread_uuid or str(uuid4())
+    thread_id = thread_uuid or uuid4().hex
+    values = _prepare_payload_for_agent(payload or {})
 
-    # Pre-process payload to convert FileInfo to file_url strings
-    if payload:
-        cleaned_payload = _prepare_payload_for_agent(payload)
-    else:
-        cleaned_payload = {}
-
-    active_handler = handler or DefaultPipelineHandler()
-
-    @asynccontextmanager
-    async def _wrap_checkpointer(
-        checkpointer: BaseCheckpointSaver | None,
-    ) -> AsyncGenerator[BaseCheckpointSaver | None]:
-        yield checkpointer
-
-    async with _wrap_checkpointer(checkpointer) as cp:
-        configurable = dict(
-            search_model_temperature=0.7,
-            guide_disable_streaming=True,
-            category_disable_streaming=True,
-            critique_disable_streaming=True,
-            thread_id=thread_id,
-            checkpoint_ns="",
-            user_uuid=user_uuid,
-        )
-
-        config = GraphConfig(
-            thread_id=thread_id,
-            recursion_limit=25,
-            configurable=configurable,
-        )
-
-        pipeline_graph = _create_graph_from_pipeline(unique, pipeline)
-        if cp:
-            pipeline_graph.checkpointer = cp
-
-        initial_state = {
-            "values": cleaned_payload,
-            "user_uuid": user_uuid,
-            "messages": [],
-        }
-
-        # --- Check for interrupts ---
-        # Get the current persisted state from the checkpointer
-        current_snapshot = None
-        if thread_uuid:
-            logger.info(f"thread_uuid = {thread_uuid}")
-            current_snapshot = await pipeline_graph.aget_state(config)
-
-        resume = None
-        if current_snapshot and current_snapshot.interrupts:
-            logger.info(f"{thread_uuid} was interrupted")
-            resume = Command(resume=True)
-        elif current_snapshot and current_snapshot.next:
-            resume = Command(resume=True)
-            logger.info(f"{thread_uuid} was interrupted at {current_snapshot.next}")
-
-        current_state = current_snapshot.values if current_snapshot else None
-
-        # Apply input mapping if defined
-        if pipeline.input_mapping and cleaned_payload:
-            mapped_payload = {}
-
-            for pipeline_key, payload_key in pipeline.input_mapping.items():
-                # 1. Try to get value directly from state using the mapping key
-                if payload_key in cleaned_payload:
-                    mapped_payload[pipeline_key] = cleaned_payload[payload_key]
-                else:
-                    # 2. If key not found, treat as literal or template
-                    mapped_payload[pipeline_key] = resolve_template(payload_key, current_state or initial_state, config)
-
-            # Merge mapped payload with original payload to keep unmapped fields
-            # Mapped values take precedence if keys collide (though they shouldn't usually)
-            final_payload = {**cleaned_payload, **mapped_payload}
-
-            # updated inital_state
-            initial_state = {
-                "values": final_payload,
-                "messages": [],
-            }
-        else:
-            final_payload = cleaned_payload
-
-        # check updated payload
-        if current_state and cleaned_payload:
-            # to update interrupted step with newly updated payload
-            await pipeline_graph.aupdate_state(config=config, values=initial_state)
-
-        try:
-            if streaming:
-                internal_gen = _with_heartbeat(
-                    astream_graph(
-                        graph=pipeline_graph,
-                        initial_state=resume if resume else initial_state,
-                        thread_uuid=thread_id,
-                        config=config,
-                    ),
-                    thread_uuid=thread_id,
-                )
-
-                # Select wrapper based on protocol
-                wrapper = ag_ui_wrapper if protocol == "ag-ui" else legacy_sse_wrapper
-
-                async for chunk in wrapper(internal_gen):
-                    yield chunk
-
-            else:
-                # ainvoke will automatically resume from the last checkpoint if the thread_id exists
-                final_state = await pipeline_graph.ainvoke(resume if resume else initial_state, config=config)
-                #final_values = final_state.get("values", {})
-
-        except Exception as e:
-            error_content = f"Error: exception from pipeline: {e}"
-            logger.error(error_content, exc_info=True)
-            # Yield error in protocol-compatible way if needed
-            # For now, keeping legacy error dict for non-streaming compatibility
-            yield {
-                "status": "pipeline_failed",
-                "message": error_content,
-                "thread_uuid": thread_id,
-                "error_details": str(e),
-            }
-
-        # get the `final_snapshot` again
-        # we can use `final_state["messages"]` to get the messages here.
-        # but when we ready to use graph.astream(...), we have to use aget_state(config) here.
-        final_snapshot = await pipeline_graph.aget_state(config)
-        final_state = final_snapshot.values if final_snapshot else {}
-        final_values = final_state.get("values", {})
-
-        # --- Check for errors ---
-        if final_values.get("error"):
-             yield {
-                "status": "pipeline_failed",
-                "message": f"Pipeline failed to execute. Error: {final_values['error']}",
-                "thread_uuid": thread_id,
-                "error_details": final_values["error"],
-                "final_state": final_values,
-             }
-
-        # Execute completion handler
-        await active_handler.on_completion(final_state, thread_id, user_uuid, cp)
-
-        if final_snapshot and final_snapshot.next:
-            # Pipeline is interrupted (paused)
-            yield {
-                "status": "pipeline_interrupted",
-                "message": "Pipeline interrupted. Waiting for resume.",
-                "thread_uuid": thread_id,
-                "current_state": final_values,
-                "next_node_names": final_snapshot.next,
-            }
-        else:
-            # Pipeline is completed
-            yield {
-                "status": "pipeline_completed",
-                "message": "Pipeline executed successfully.",
-                "thread_uuid": thread_id,
-                "final_state": final_values,
-            }
-
-
-async def _event_from_message(
-    last_ai_message: AnyMessage,
-    final_state: AgentState,
-    thread_uuid: str,
-    chunktype: str = "complete",
-) -> dict[str, Any]:
-    """Check the last ai message and return internal event data (snake_case)."""
-    ai_content = last_ai_message.content
-
-    final_event = {
-        "type": chunktype,
-        "thread_uuid": thread_uuid,
-        "id": last_ai_message.id,
-        "data": {
-            "type": "ai",
-            "content": ai_content,
-        },
+    graph = _compile_pipeline(unique, pipeline, checkpointer)
+    config: RunnableConfig = {
+        "configurable": {"thread_id": thread_id, "user_uuid": user_uuid},
+        "recursion_limit": 25,
     }
 
-    return final_event
+    # 재개 판단: 기존 스레드가 인터럽트/미완 상태면 resume 커맨드로 이어간다.
+    resume: Command | None = None
+    if thread_uuid and checkpointer is not None:
+        snapshot = await graph.aget_state(config)
+        if snapshot and (snapshot.interrupts or snapshot.next):
+            logger.info("thread %s 재개", thread_id)
+            resume = Command(resume=True)
+
+    initial_state = {"values": values, "user_uuid": user_uuid, "messages": []}
+    graph_input: Any = resume if resume is not None else initial_state
+
+    if streaming:
+        async for event in astream_graph(graph, graph_input, thread_id, config):
+            yield event
+        return
+
+    try:
+        await graph.ainvoke(graph_input, config=config)
+    except Exception as exc:  # noqa: BLE001  # 실행 실패를 프로토콜 dict로 변환해 반환
+        logger.error("파이프라인 실행 실패", exc_info=True)
+        yield {
+            "status": "pipeline_failed",
+            "message": f"파이프라인 실행 중 오류: {exc}",
+            "thread_uuid": thread_id,
+            "error_details": str(exc),
+        }
+        return
+
+    snapshot = await graph.aget_state(config) if checkpointer is not None else None
+    final_values = (snapshot.values.get("values", {}) if snapshot else {}) or {}
+
+    if snapshot and snapshot.next:
+        yield {
+            "status": "pipeline_interrupted",
+            "message": "파이프라인이 인터럽트되었습니다. 재개를 대기합니다.",
+            "thread_uuid": thread_id,
+            "current_state": final_values,
+            "next_node_names": list(snapshot.next),
+        }
+    else:
+        yield {
+            "status": "pipeline_completed",
+            "message": "파이프라인이 정상 완료되었습니다.",
+            "thread_uuid": thread_id,
+            "final_state": final_values,
+        }
+
+
+# --- 스트리밍 이벤트 ------------------------------------------------------------
+
+
+def _ts() -> int:
+    return int(time.time() * 1000)
 
 
 async def astream_graph(
     graph: CompiledStateGraph,
-    initial_state: dict,
+    graph_input: Any,
     thread_uuid: str,
-    config: GraphConfig,
+    config: RunnableConfig,
 ) -> AsyncGenerator[dict[str, Any]]:
-    """
-    Streams internal standard events from the pipeline graph.
-    """
+    """그래프 실행을 표준 이벤트로 스트리밍한다(SSE 프레임으로 직렬화되는 dict)."""
+    meta = {"thread_uuid": thread_uuid, "timestamp": _ts()}
+    yield {"event": "run_started", "metadata": {**meta, "timestamp": _ts()}}
 
-    _persisted_state = await graph.aget_state(config)
-
-    last_message_id = None
-    # get the last saved human message's msg.id
-    if _persisted_state and "messages" in _persisted_state.values:
-        # get the last `filtered` saved message to get the last_message_id
-        async with async_context_session() as db:
-            last_saved_message = await select_last_message_in_thread(db, thread_uuid)
-            if last_saved_message:
-                last_message_id = last_saved_message.message["data"]["id"]
-
-    last_ai_message = None
-    final_state = None
-
-    message_dict = {}
-    # If it is a pipeline graph, we can try to find steps from its nodes
-    if hasattr(graph, 'nodes'):
-        message_dict = {
-            node_name: node_name
-            for node_name in graph.nodes
-            if node_name not in ["__start__", "__end__"]
-        }
-
-    # Signal start
-    yield {
-        "event": "run_started",
-        "metadata": {
-            "thread_uuid": thread_uuid,
-            "timestamp": int(time.time() * 1000),
-        },
-    }
-
+    last_ai: AIMessage | None = None
     try:
-        async for chunk in graph.astream(
-            input=initial_state,
+        async for mode, chunk in graph.astream(
+            input=graph_input,
             config=config,
-            stream_mode=["updates", "messages", "custom"],
-            subgraphs=True,
+            stream_mode=["updates", "messages"],
         ):
-            _ns = mode = None
-            if isinstance(chunk, tuple):
-                if len(chunk) == 3:
-                    _ns, mode, chunk = chunk
-                else:
-                    dummy, chunk = chunk
-                    if dummy in ["updates", "messages", "custom"]:
-                        mode = dummy
-                    else:
-                        _ns = dummy
-
-            if mode not in ["updates"]:
-                if mode == "messages":
-                    # ignore some subgraph's chunk messages
-                    # check namespaces e.g.) ('link_subgraph:xxxxxxxx-....', 'link_process_subgraph:yyyyyyyy-...',
-                    #if ns and ns[0].split(":")[0] in ["link_subgraph"]:
-                    #    continue
-
-                    for message in chunk:
-                        #if isinstance(message, AIMessageChunk | ChatMessageChunk):
-                        if isinstance(message, AIMessageChunk):
-                            if not message.content: # ignore empty chunk
-                                continue
-
-                            yield {
-                                "event": "message_chunk",
-                                "data": {
-                                    "content": message.content,
-                                    "message_id": message.id,
-                                },
-                                "metadata": {
-                                    "thread_uuid": thread_uuid,
-                                    "timestamp": int(time.time() * 1000),
-                                },
-                            }
-                    continue
-
-                if mode == "custom":
-                    logger.debug(f"TODO MESSAGES TYPE = {type(chunk)}, MESSAGES = {dumps(chunk, pretty=True, ensure_ascii=False)}")
+            if mode == "messages":
+                message, _ = chunk
+                if isinstance(message, AIMessageChunk) and message.content:
                     yield {
-                        "event": "custom",
-                        "data": chunk,
-                        "metadata": {
-                            "thread_uuid": thread_uuid,
-                            "timestamp": int(time.time() * 1000),
-                        },
+                        "event": "message_chunk",
+                        "data": {"content": message.content, "message_id": message.id},
+                        "metadata": {**meta, "timestamp": _ts()},
                     }
-                    continue
-
                 continue
 
+            # mode == "updates": 노드별 출력
             for node_name, node_output in chunk.items():
-                if node_name in ["del_tool_call"]:
+                if node_name == "__interrupt__":
+                    interrupts = node_output or ()
+                    value = interrupts[0].value if interrupts else None
+                    yield {
+                        "event": "interrupt",
+                        "data": {"node_name": None, "value": value},
+                        "metadata": {**meta, "timestamp": _ts()},
+                    }
                     continue
 
-                if node_name in message_dict.keys():
-                    routing_info = node_output.get("routing_info", node_name) if node_output else node_name
-                    logger.debug(f"routing_info or node_name = {routing_info}")
-                    msg_id = node_output["messages"][-1].id if node_output and "messages" in node_output else None
-
-                    yield {
-                        "event": "step_started",
-                        "data": {
-                            "node_name": node_name,
-                            "status_message": message_dict.get(routing_info, message_dict[node_name]),
-                            "message_id": msg_id,
-                        },
-                        "metadata": {
-                            "thread_uuid": thread_uuid,
-                            "timestamp": int(time.time() * 1000),
-                        },
-                    }
-                elif node_name == "__interrupt__":
-                    # check human-in-the-loop interrupt events
-                    if not node_output:
-                        continue
-
-                    try:
-                        msg = node_output[0].value
-                    except (IndexError, AttributeError, TypeError) as e:
-                        logger.error("Fail to parse human-in-the-loop message", exc_info=True)
-                        raise
-
-                    if msg.content:
-                        yield {
-                            "event": "interrupt",
-                            "data": {"content": msg.content, "message_id": msg.id},
-                            "metadata": {
-                                "thread_uuid": thread_uuid,
-                                "timestamp": int(time.time() * 1000),
-                            },
-                        }
-
-
-                if isinstance(node_output, dict) and "messages" in node_output:
-                    final_state = node_output
-                    for msg in reversed(node_output["messages"]):
-                        # check the latest AIMessage.
-                        if hasattr(msg, "id") and last_message_id and last_message_id == msg.id:
-                            # this is the last saved HumanMessage.
-                            break
-
-                        # check the agent's output AIMessage.
-                        # use node_name ends with "*_subgraph"
+                yield {
+                    "event": "step_started",
+                    "data": {"node_name": node_name},
+                    "metadata": {**meta, "timestamp": _ts()},
+                }
+                if isinstance(node_output, dict):
+                    for msg in reversed(node_output.get("messages", [])):
                         if isinstance(msg, AIMessage):
-                        #if isinstance(msg, AIMessage | ChatMessage):
-                            last_ai_message = msg
-                            if node_name.endswith("_subgraph"):
-                                event_data = await _event_from_message(msg, node_output, thread_uuid, "message")
-                                yield {
-                                    "event": "message_complete",
-                                    "data": {**event_data["data"], "message_id": msg.id, "chunktype": "message"},
-                                    "metadata": {
-                                        "thread_uuid": thread_uuid,
-                                        "timestamp": int(time.time() * 1000),
-                                    },
-                                }
+                            last_ai = msg
                             break
 
-        if last_ai_message:
-            final_event_data = await _event_from_message(last_ai_message, final_state, thread_uuid)
-            yield {
-                "event": "run_finished",
-                "data": {**final_event_data["data"], "message_id": last_ai_message.id, "chunktype": "complete"},
-                "metadata": {
-                    "thread_uuid": thread_uuid,
-                    "timestamp": int(time.time() * 1000),
-                },
-            }
-        else:
-            yield {
-                "event": "run_finished",
-                "metadata": {
-                    "thread_uuid": thread_uuid,
-                    "timestamp": int(time.time() * 1000),
-                },
-            }
+        data = {"content": last_ai.content, "message_id": last_ai.id} if last_ai else {}
+        yield {
+            "event": "run_finished",
+            "data": data,
+            "metadata": {**meta, "timestamp": _ts()},
+        }
 
-    except Exception as e:
-        logger.error(f"Error in astream_graph: {e}", exc_info=True)
+    except Exception as exc:  # noqa: BLE001  # 스트림 오류를 이벤트로 변환
+        logger.error("astream_graph 오류", exc_info=True)
         yield {
             "event": "run_error",
-            "data": {"message": str(e)},
-            "metadata": {
-                "thread_uuid": thread_uuid,
-                "timestamp": int(time.time() * 1000),
-            },
+            "data": {"message": str(exc)},
+            "metadata": {**meta, "timestamp": _ts()},
         }
