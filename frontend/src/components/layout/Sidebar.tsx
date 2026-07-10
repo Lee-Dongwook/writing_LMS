@@ -1,50 +1,31 @@
 import { useUiStore } from '../../store/uiStore'
+import type { ActiveView } from '../../store/uiStore'
 
-const CLASSROOM_ITEMS = [
-  '클래스룸',
-  '사전학습/컨텐츠',
-  '사전평가',
-  '설문조사',
-  '평가(과제) 제출 & 피드백',
-  '스터디룸',
-  '학습퀴즈',
+const NAV: { view: ActiveView; icon: string; label: string }[] = [
+  { view: 'dashboard', icon: '🖥️', label: '나의 강의실' },
+  { view: 'attendance', icon: '📋', label: '출석 관리' },
+  { view: 'grades', icon: '📊', label: '성적 · 평가' },
+  { view: 'assignments', icon: '📝', label: '과제 · 오답노트' },
 ]
 
 const FOOTER_LINKS = ['서비스이용약관', '개인정보처리방침', '마케팅이용약관']
 
-function ChevronIcon({ open }: { open: boolean }) {
-  return (
-    <svg
-      className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`}
-      viewBox="0 0 20 20"
-      fill="currentColor"
-    >
-      <path
-        fillRule="evenodd"
-        d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
-        clipRule="evenodd"
-      />
-    </svg>
-  )
-}
-
 export default function Sidebar() {
-  const { sidebarOpen, classroomExpanded, toggleClassroom, activeView, setActiveView } =
-    useUiStore()
+  const { sidebarOpen, activeView, setActiveView } = useUiStore()
 
   return (
     <aside
       className={`${
         sidebarOpen ? 'w-64' : 'w-0'
-      } hidden shrink-0 overflow-hidden border-r border-slate-200 bg-white transition-all duration-200 lg:flex lg:flex-col`}
+      } hidden shrink-0 overflow-hidden border-r border-line bg-white transition-all duration-200 lg:flex lg:flex-col`}
     >
       {/* 프로필 */}
       <div className="flex items-center gap-3 px-5 py-5">
-        <div className="flex h-11 w-11 items-center justify-center rounded-full bg-brand-100 text-lg">
+        <div className="flex h-11 w-11 items-center justify-center rounded-full bg-brand-50 text-lg">
           🧑
         </div>
         <div className="min-w-0">
-          <div className="flex items-center gap-1 text-sm font-semibold text-slate-800">
+          <div className="flex items-center gap-1 text-sm font-semibold text-ink">
             이동욱
             <span className="text-slate-400">✎</span>
           </div>
@@ -53,93 +34,26 @@ export default function Sidebar() {
       </div>
 
       {/* 네비게이션 */}
-      <nav className="flex-1 overflow-y-auto px-3 pb-4 thin-scroll">
-        <button
-          onClick={toggleClassroom}
-          className="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm font-semibold text-brand-700"
-        >
-          <span className="flex items-center gap-2">
-            <span className="text-base">🖥️</span>
-            나의 강의실
-          </span>
-          <ChevronIcon open={classroomExpanded} />
-        </button>
-
-        {classroomExpanded && (
-          <ul className="mb-2 space-y-0.5 pl-2">
-            {CLASSROOM_ITEMS.map((item, i) => (
-              <li key={item}>
-                <button
-                  onClick={() => setActiveView('dashboard')}
-                  className={`block w-full rounded-lg px-4 py-2 text-left text-sm transition-colors ${
-                    i === 0 && activeView === 'dashboard'
-                      ? 'bg-brand-50 font-medium text-brand-700'
-                      : 'text-slate-500 hover:bg-slate-50'
-                  }`}
-                >
-                  {item}
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-
-        {/* 출석 관리 */}
-        <button
-          onClick={() => setActiveView('attendance')}
-          className={`flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors ${
-            activeView === 'attendance'
-              ? 'bg-brand-50 text-brand-700'
-              : 'text-slate-600 hover:bg-slate-50'
-          }`}
-        >
-          <span className="flex items-center gap-2">
-            <span className="text-base">📋</span>
-            출석 관리
-          </span>
-        </button>
-
-        {/* 성적 · 평가 */}
-        <button
-          onClick={() => setActiveView('grades')}
-          className={`flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors ${
-            activeView === 'grades'
-              ? 'bg-brand-50 text-brand-700'
-              : 'text-slate-600 hover:bg-slate-50'
-          }`}
-        >
-          <span className="flex items-center gap-2">
-            <span className="text-base">📊</span>
-            성적 · 평가
-          </span>
-        </button>
-
-        {/* 과제 · 오답노트 */}
-        <button
-          onClick={() => setActiveView('assignments')}
-          className={`flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors ${
-            activeView === 'assignments'
-              ? 'bg-brand-50 text-brand-700'
-              : 'text-slate-600 hover:bg-slate-50'
-          }`}
-        >
-          <span className="flex items-center gap-2">
-            <span className="text-base">📝</span>
-            과제 · 오답노트
-          </span>
-        </button>
-
-        <button className="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50">
-          <span className="flex items-center gap-2">
-            <span className="text-base">🎧</span>
-            학습지원센터
-          </span>
-          <ChevronIcon open={false} />
-        </button>
+      <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 pb-4 thin-scroll">
+        {NAV.map((item) => {
+          const active = activeView === item.view
+          return (
+            <button
+              key={item.view}
+              onClick={() => setActiveView(item.view)}
+              className={`flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors ${
+                active ? 'bg-brand-50 text-brand-700' : 'text-slate-600 hover:bg-surface'
+              }`}
+            >
+              <span className="text-base">{item.icon}</span>
+              {item.label}
+            </button>
+          )
+        })}
       </nav>
 
       {/* 푸터 */}
-      <div className="border-t border-slate-100 px-5 py-4 text-[11px] text-slate-400">
+      <div className="px-5 py-4 text-[11px] text-slate-400">
         <ul className="mb-3 space-y-1">
           {FOOTER_LINKS.map((link) => (
             <li key={link}>
