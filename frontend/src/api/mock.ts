@@ -1,4 +1,5 @@
 import type {
+  Assignment,
   AttendanceRecord,
   AttendanceStatus,
   AttendanceSummary,
@@ -9,6 +10,8 @@ import type {
   Notice,
   OnlineUser,
   ScheduleItem,
+  VocabTest,
+  WrongItem,
 } from '../types'
 
 // 간단한 지연으로 실제 네트워크 요청을 흉내낸다 (Tanstack Query 로딩 UX 확인용)
@@ -251,6 +254,124 @@ export const fetchGradeReport = (): Promise<GradeReport> =>
     className: '고3 독서·문학 심화반',
     exams: EXAMS,
   })
+
+// 과제 이행도 목업
+export const fetchAssignments = (): Promise<Assignment[]> =>
+  delay([
+    {
+      id: 'a1',
+      title: '독서 지문 분석 - 「양자역학과 관측」',
+      category: '독서 분석',
+      dueDate: '2026-07-04',
+      status: '완료',
+      score: 95,
+      feedback: '문단별 중심문장 추출이 정확합니다.',
+    },
+    {
+      id: 'a2',
+      title: '주간 어휘 테스트 (7월 1주차)',
+      category: '어휘 테스트',
+      dueDate: '2026-07-05',
+      status: '완료',
+      score: 88,
+      feedback: '한자어 의미 구분 보완 필요.',
+    },
+    {
+      id: 'a3',
+      title: '문학 감상문 - 김소월 「진달래꽃」',
+      category: '문학 감상',
+      dueDate: '2026-07-07',
+      status: '미흡',
+      score: 62,
+      feedback: '화자의 정서 근거를 지문에서 찾아 서술하세요.',
+    },
+    {
+      id: 'a4',
+      title: '오답 정리 - 6월 모의평가 독서',
+      category: '오답 정리',
+      dueDate: '2026-07-08',
+      status: '미제출',
+      score: null,
+      feedback: '',
+    },
+    {
+      id: 'a5',
+      title: '독서 지문 분석 - 「소유권과 점유」',
+      category: '독서 분석',
+      dueDate: '2026-07-10',
+      status: '완료',
+      score: 90,
+      feedback: '논리 구조 요약이 명료합니다.',
+    },
+  ])
+
+// 오답노트 목업 — 갈래별로 다양하게
+export const fetchWrongItems = (): Promise<WrongItem[]> =>
+  delay([
+    {
+      id: 'w1',
+      date: '2026-06-04',
+      source: '6월 모의평가 23번',
+      genre: '독서(과학)',
+      questionType: '세부 정보 추론',
+      reason: '지문의 조건절을 놓쳐 반대로 해석',
+      mastered: false,
+    },
+    {
+      id: 'w2',
+      date: '2026-06-04',
+      source: '6월 모의평가 31번',
+      genre: '독서(인문)',
+      questionType: '관점 비교',
+      reason: '두 학자의 견해 차이 혼동',
+      mastered: true,
+    },
+    {
+      id: 'w3',
+      date: '2026-05-20',
+      source: '5월 학력평가 27번',
+      genre: '고전소설',
+      questionType: '인물 심리 파악',
+      reason: '고어 어휘 미숙지',
+      mastered: false,
+    },
+    {
+      id: 'w4',
+      date: '2026-05-20',
+      source: '5월 학력평가 34번',
+      genre: '현대시',
+      questionType: '표현상 특징',
+      reason: '반어·역설 구분 실수',
+      mastered: false,
+    },
+    {
+      id: 'w5',
+      date: '2026-07-02',
+      source: '7월 학력평가 18번',
+      genre: '독서(사회)',
+      questionType: '구체적 사례 적용',
+      reason: '보기 사례를 지문 원리에 대응 실패',
+      mastered: false,
+    },
+    {
+      id: 'w6',
+      date: '2026-07-02',
+      source: '7월 학력평가 40번',
+      genre: '고전시가',
+      questionType: '화자의 정서',
+      reason: '시적 화자와 대상 혼동',
+      mastered: true,
+    },
+  ])
+
+// 주간 어휘 테스트 누적 목업
+export const fetchVocabTests = (): Promise<VocabTest[]> =>
+  delay([
+    { id: 'v1', week: '6월 2주차', date: '2026-06-14', score: 32, total: 40 },
+    { id: 'v2', week: '6월 3주차', date: '2026-06-21', score: 35, total: 40 },
+    { id: 'v3', week: '6월 4주차', date: '2026-06-28', score: 34, total: 40 },
+    { id: 'v4', week: '7월 1주차', date: '2026-07-05', score: 38, total: 40 },
+  ])
 
 export const fetchOnlineUsers = (): Promise<OnlineUser[]> =>
   delay(

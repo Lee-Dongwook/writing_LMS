@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import {
+  fetchAssignments,
   fetchAttendance,
   fetchCalendarEvents,
   fetchCourseOverview,
@@ -7,6 +8,8 @@ import {
   fetchNotices,
   fetchOnlineUsers,
   fetchSchedule,
+  fetchVocabTests,
+  fetchWrongItems,
 } from './mock'
 
 export const useCourseOverview = () =>
@@ -26,6 +29,15 @@ export const useAttendance = () =>
 
 export const useGradeReport = () =>
   useQuery({ queryKey: ['grade-report'], queryFn: fetchGradeReport })
+
+export const useAssignments = () =>
+  useQuery({ queryKey: ['assignments'], queryFn: fetchAssignments })
+
+export const useWrongItems = () =>
+  useQuery({ queryKey: ['wrong-items'], queryFn: fetchWrongItems })
+
+export const useVocabTests = () =>
+  useQuery({ queryKey: ['vocab-tests'], queryFn: fetchVocabTests })
 
 export const useOnlineUsers = (enabled: boolean) =>
   useQuery({ queryKey: ['online-users'], queryFn: fetchOnlineUsers, enabled })

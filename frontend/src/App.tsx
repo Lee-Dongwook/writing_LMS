@@ -3,6 +3,7 @@ import Header from './components/layout/Header'
 import Dashboard from './pages/Dashboard'
 import Attendance from './pages/Attendance'
 import Grades from './pages/Grades'
+import Assignments from './pages/Assignments'
 import OnlineUsersButton from './components/OnlineUsersButton'
 import OnlineUsersModal from './components/OnlineUsersModal'
 import { useUiStore } from './store/uiStore'
@@ -20,6 +21,8 @@ export default function App() {
             <Attendance />
           ) : activeView === 'grades' ? (
             <Grades />
+          ) : activeView === 'assignments' ? (
+            <Assignments />
           ) : (
             <Dashboard />
           )}

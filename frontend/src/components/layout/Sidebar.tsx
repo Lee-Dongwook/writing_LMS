@@ -114,6 +114,21 @@ export default function Sidebar() {
           </span>
         </button>
 
+        {/* 과제 · 오답노트 */}
+        <button
+          onClick={() => setActiveView('assignments')}
+          className={`flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors ${
+            activeView === 'assignments'
+              ? 'bg-brand-50 text-brand-700'
+              : 'text-slate-600 hover:bg-slate-50'
+          }`}
+        >
+          <span className="flex items-center gap-2">
+            <span className="text-base">📝</span>
+            과제 · 오답노트
+          </span>
+        </button>
+
         <button className="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50">
           <span className="flex items-center gap-2">
             <span className="text-base">🎧</span>

@@ -83,6 +83,49 @@ export interface GradeReport {
   exams: ExamResult[] // 시간순(오래된→최신)
 }
 
+// ── 과제 / 오답노트 / 어휘 (국어 특화) ─────────────────
+export type AssignmentStatus = '완료' | '미흡' | '미제출'
+export type AssignmentCategory = '독서 분석' | '문학 감상' | '어휘 테스트' | '오답 정리'
+
+export interface Assignment {
+  id: string
+  title: string
+  category: AssignmentCategory
+  dueDate: string // YYYY-MM-DD
+  status: AssignmentStatus
+  score: number | null // 이행도 점수 (0~100), 미제출은 null
+  feedback: string
+}
+
+// 국어 갈래(장르) — 오답노트 유사 유형 묶음 기준
+export type LiteraryGenre =
+  | '현대시'
+  | '고전시가'
+  | '현대소설'
+  | '고전소설'
+  | '수필·극'
+  | '독서(인문)'
+  | '독서(과학)'
+  | '독서(사회)'
+
+export interface WrongItem {
+  id: string
+  date: string // YYYY-MM-DD
+  source: string // 출처 예: '6월 모의평가 23번'
+  genre: LiteraryGenre
+  questionType: string // 유형 예: '세부 정보 추론'
+  reason: string // 오답 원인
+  mastered: boolean // 복습 완료 여부
+}
+
+export interface VocabTest {
+  id: string
+  week: string // '7월 1주차'
+  date: string // YYYY-MM-DD
+  score: number // 맞은 개수
+  total: number
+}
+
 export interface CourseOverview {
   title: string
   round: string
