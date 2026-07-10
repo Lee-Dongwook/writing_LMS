@@ -3,6 +3,7 @@ import {
   fetchAttendance,
   fetchCalendarEvents,
   fetchCourseOverview,
+  fetchGradeReport,
   fetchNotices,
   fetchOnlineUsers,
   fetchSchedule,
@@ -22,6 +23,9 @@ export const useCalendarEvents = () =>
 
 export const useAttendance = () =>
   useQuery({ queryKey: ['attendance'], queryFn: fetchAttendance })
+
+export const useGradeReport = () =>
+  useQuery({ queryKey: ['grade-report'], queryFn: fetchGradeReport })
 
 export const useOnlineUsers = (enabled: boolean) =>
   useQuery({ queryKey: ['online-users'], queryFn: fetchOnlineUsers, enabled })

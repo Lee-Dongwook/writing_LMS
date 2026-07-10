@@ -2,6 +2,7 @@ import Sidebar from './components/layout/Sidebar'
 import Header from './components/layout/Header'
 import Dashboard from './pages/Dashboard'
 import Attendance from './pages/Attendance'
+import Grades from './pages/Grades'
 import OnlineUsersButton from './components/OnlineUsersButton'
 import OnlineUsersModal from './components/OnlineUsersModal'
 import { useUiStore } from './store/uiStore'
@@ -15,7 +16,13 @@ export default function App() {
       <div className="flex min-w-0 flex-1 flex-col">
         <Header />
         <main className="flex-1 overflow-y-auto thin-scroll">
-          {activeView === 'attendance' ? <Attendance /> : <Dashboard />}
+          {activeView === 'attendance' ? (
+            <Attendance />
+          ) : activeView === 'grades' ? (
+            <Grades />
+          ) : (
+            <Dashboard />
+          )}
         </main>
       </div>
 

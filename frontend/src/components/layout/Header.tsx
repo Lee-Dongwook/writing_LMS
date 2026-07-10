@@ -1,8 +1,8 @@
-import { useUiStore } from '../../store/uiStore'
+import { useUiStore, APP_ROLES } from '../../store/uiStore'
 import { useCourseOverview } from '../../api/hooks'
 
 export default function Header() {
-  const { toggleSidebar } = useUiStore()
+  const { toggleSidebar, role, setRole } = useUiStore()
   const { data } = useCourseOverview()
 
   const title = data ? `${data.title} ${data.round}` : '강의실'
@@ -24,6 +24,29 @@ export default function Header() {
       </button>
 
       <h1 className="flex-1 truncate text-base font-semibold text-slate-800">{title}</h1>
+
+      {/* 데모용 역할 전환 토글 (원장/학생/학부모) */}
+      <div
+        className="flex items-center rounded-lg bg-slate-100 p-0.5"
+        role="group"
+        aria-label="역할 전환"
+      >
+        {APP_ROLES.map((r) => (
+          <button
+            key={r.value}
+            onClick={() => setRole(r.value)}
+            aria-pressed={role === r.value}
+            className={`flex items-center gap-1 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors sm:px-3 ${
+              role === r.value
+                ? 'bg-white text-brand-700 shadow-sm'
+                : 'text-slate-500 hover:text-slate-700'
+            }`}
+          >
+            <span>{r.emoji}</span>
+            <span className="hidden sm:inline">{r.label}</span>
+          </button>
+        ))}
+      </div>
 
       <button className="rounded-md p-2 text-slate-400 hover:bg-slate-100" aria-label="펼치기">
         <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">

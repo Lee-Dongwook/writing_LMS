@@ -4,6 +4,8 @@ import type {
   AttendanceSummary,
   CalendarEvent,
   CourseOverview,
+  ExamResult,
+  GradeReport,
   Notice,
   OnlineUser,
   ScheduleItem,
@@ -123,6 +125,132 @@ export const fetchAttendance = (): Promise<AttendanceSummary> => {
     records,
   })
 }
+
+// 성적/평가 목업: 3월→7월 모의고사 4회 + 정기평가 1회, 국어 영역/역량별 세부 점수
+const EXAMS: ExamResult[] = [
+  {
+    id: 'e1',
+    date: '2026-03-25',
+    title: '3월 학력평가',
+    type: '모의고사',
+    rawScore: 78,
+    standardScore: 118,
+    percentile: 82,
+    grade: 3,
+    classAvg: 71,
+    domainScores: [
+      { domain: '독서', score: 28, max: 38 },
+      { domain: '문학', score: 30, max: 38 },
+      { domain: '언어와매체', score: 20, max: 24 },
+      { domain: '화법과작문', score: 0, max: 0 },
+    ],
+    competencyRates: [
+      { competency: '사실적 이해', correct: 12, total: 14 },
+      { competency: '추론적 이해', correct: 8, total: 13 },
+      { competency: '비판적 이해', correct: 5, total: 8 },
+      { competency: '어휘·개념', correct: 6, total: 10 },
+    ],
+  },
+  {
+    id: 'e2',
+    date: '2026-04-15',
+    title: '4월 정기평가',
+    type: '정기평가',
+    rawScore: 82,
+    standardScore: 122,
+    percentile: 86,
+    grade: 2,
+    classAvg: 74,
+    domainScores: [
+      { domain: '독서', score: 31, max: 38 },
+      { domain: '문학', score: 31, max: 38 },
+      { domain: '언어와매체', score: 20, max: 24 },
+      { domain: '화법과작문', score: 0, max: 0 },
+    ],
+    competencyRates: [
+      { competency: '사실적 이해', correct: 13, total: 14 },
+      { competency: '추론적 이해', correct: 9, total: 13 },
+      { competency: '비판적 이해', correct: 6, total: 8 },
+      { competency: '어휘·개념', correct: 7, total: 10 },
+    ],
+  },
+  {
+    id: 'e3',
+    date: '2026-05-20',
+    title: '5월 학력평가',
+    type: '모의고사',
+    rawScore: 80,
+    standardScore: 120,
+    percentile: 84,
+    grade: 3,
+    classAvg: 73,
+    domainScores: [
+      { domain: '독서', score: 29, max: 38 },
+      { domain: '문학', score: 32, max: 38 },
+      { domain: '언어와매체', score: 19, max: 24 },
+      { domain: '화법과작문', score: 0, max: 0 },
+    ],
+    competencyRates: [
+      { competency: '사실적 이해', correct: 12, total: 14 },
+      { competency: '추론적 이해', correct: 8, total: 13 },
+      { competency: '비판적 이해', correct: 6, total: 8 },
+      { competency: '어휘·개념', correct: 8, total: 10 },
+    ],
+  },
+  {
+    id: 'e4',
+    date: '2026-06-04',
+    title: '6월 모의평가',
+    type: '모의고사',
+    rawScore: 88,
+    standardScore: 128,
+    percentile: 92,
+    grade: 2,
+    classAvg: 76,
+    domainScores: [
+      { domain: '독서', score: 34, max: 38 },
+      { domain: '문학', score: 34, max: 38 },
+      { domain: '언어와매체', score: 20, max: 24 },
+      { domain: '화법과작문', score: 0, max: 0 },
+    ],
+    competencyRates: [
+      { competency: '사실적 이해', correct: 14, total: 14 },
+      { competency: '추론적 이해', correct: 11, total: 13 },
+      { competency: '비판적 이해', correct: 7, total: 8 },
+      { competency: '어휘·개념', correct: 8, total: 10 },
+    ],
+  },
+  {
+    id: 'e5',
+    date: '2026-07-02',
+    title: '7월 학력평가',
+    type: '모의고사',
+    rawScore: 91,
+    standardScore: 131,
+    percentile: 95,
+    grade: 1,
+    classAvg: 78,
+    domainScores: [
+      { domain: '독서', score: 36, max: 38 },
+      { domain: '문학', score: 35, max: 38 },
+      { domain: '언어와매체', score: 20, max: 24 },
+      { domain: '화법과작문', score: 0, max: 0 },
+    ],
+    competencyRates: [
+      { competency: '사실적 이해', correct: 14, total: 14 },
+      { competency: '추론적 이해', correct: 12, total: 13 },
+      { competency: '비판적 이해', correct: 7, total: 8 },
+      { competency: '어휘·개념', correct: 9, total: 10 },
+    ],
+  },
+]
+
+export const fetchGradeReport = (): Promise<GradeReport> =>
+  delay({
+    student: '이동욱',
+    className: '고3 독서·문학 심화반',
+    exams: EXAMS,
+  })
 
 export const fetchOnlineUsers = (): Promise<OnlineUser[]> =>
   delay(
