@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import {
+  fetchAttendance,
   fetchCalendarEvents,
   fetchCourseOverview,
   fetchNotices,
@@ -18,6 +19,9 @@ export const useSchedule = () =>
 
 export const useCalendarEvents = () =>
   useQuery({ queryKey: ['calendar-events'], queryFn: fetchCalendarEvents })
+
+export const useAttendance = () =>
+  useQuery({ queryKey: ['attendance'], queryFn: fetchAttendance })
 
 export const useOnlineUsers = (enabled: boolean) =>
   useQuery({ queryKey: ['online-users'], queryFn: fetchOnlineUsers, enabled })

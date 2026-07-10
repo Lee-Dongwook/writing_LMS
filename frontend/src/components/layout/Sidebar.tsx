@@ -29,7 +29,8 @@ function ChevronIcon({ open }: { open: boolean }) {
 }
 
 export default function Sidebar() {
-  const { sidebarOpen, classroomExpanded, toggleClassroom } = useUiStore()
+  const { sidebarOpen, classroomExpanded, toggleClassroom, activeView, setActiveView } =
+    useUiStore()
 
   return (
     <aside
@@ -68,20 +69,35 @@ export default function Sidebar() {
           <ul className="mb-2 space-y-0.5 pl-2">
             {CLASSROOM_ITEMS.map((item, i) => (
               <li key={item}>
-                <a
-                  href="#"
-                  className={`block rounded-lg px-4 py-2 text-sm transition-colors ${
-                    i === 0
+                <button
+                  onClick={() => setActiveView('dashboard')}
+                  className={`block w-full rounded-lg px-4 py-2 text-left text-sm transition-colors ${
+                    i === 0 && activeView === 'dashboard'
                       ? 'bg-brand-50 font-medium text-brand-700'
                       : 'text-slate-500 hover:bg-slate-50'
                   }`}
                 >
                   {item}
-                </a>
+                </button>
               </li>
             ))}
           </ul>
         )}
+
+        {/* 출석 관리 */}
+        <button
+          onClick={() => setActiveView('attendance')}
+          className={`flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors ${
+            activeView === 'attendance'
+              ? 'bg-brand-50 text-brand-700'
+              : 'text-slate-600 hover:bg-slate-50'
+          }`}
+        >
+          <span className="flex items-center gap-2">
+            <span className="text-base">📋</span>
+            출석 관리
+          </span>
+        </button>
 
         <button className="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50">
           <span className="flex items-center gap-2">

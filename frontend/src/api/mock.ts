@@ -1,4 +1,7 @@
 import type {
+  AttendanceRecord,
+  AttendanceStatus,
+  AttendanceSummary,
   CalendarEvent,
   CourseOverview,
   Notice,
@@ -48,6 +51,78 @@ const NAMES = [
   '서민준', '오하늘', '이도윤', '이수민', '장현우', '정예린', '조민재', '최유나',
   '한지훈', '홍서연', '문가온', '배정후', '신아름', '윤도현',
 ]
+
+// 출석 목업: 2026년 7월, 평일(월~금)만 수업일로 생성한다.
+function buildAttendanceRecords(): AttendanceRecord[] {
+  // 날짜별 상태 시나리오 (기준일 2026-07-10까지만 기록이 존재)
+  const scenario: Record<number, { status: AttendanceStatus; note?: string }> = {
+    1: { status: '출석' },
+    2: { status: '출석' },
+    3: { status: '지각', note: '지하철 지연' },
+    6: { status: '출석' },
+    7: { status: '결석', note: '병가 (진단서 제출)' },
+    8: { status: '공결', note: '모의고사 응시' },
+    9: { status: '출석' },
+    10: { status: '조퇴', note: '병원 진료' },
+  }
+
+  const records: AttendanceRecord[] = []
+  for (let day = 1; day <= 31; day++) {
+    const date = new Date(2026, 6, day)
+    const dow = date.getDay()
+    if (dow === 0 || dow === 6) continue // 주말 제외
+    const entry = scenario[day]
+    if (!entry) continue // 기준일 이후는 기록 없음
+
+    const iso = toIso(date)
+    let checkIn: string | null = '09:00'
+    let checkOut: string | null = '18:00'
+    if (entry.status === '지각') checkIn = '09:24'
+    if (entry.status === '조퇴') checkOut = '14:10'
+    if (entry.status === '결석' || entry.status === '공결') {
+      checkIn = null
+      checkOut = null
+    }
+
+    records.push({
+      id: `att-${iso}`,
+      date: iso,
+      status: entry.status,
+      checkIn,
+      checkOut,
+      note: entry.note ?? '',
+    })
+  }
+  return records
+}
+
+function toIso(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+export const fetchAttendance = (): Promise<AttendanceSummary> => {
+  const records = buildAttendanceRecords()
+  const presentDays = records.filter((r) => r.status === '출석').length
+  const lateDays = records.filter((r) => r.status === '지각').length
+  const absentDays = records.filter((r) => r.status === '결석').length
+  // 출석률: 결석을 제외한 참여일 비율 (지각/조퇴/공결은 참여로 인정)
+  const attended = records.filter((r) => r.status !== '결석').length
+  const attendanceRate =
+    records.length === 0 ? 0 : Math.round((attended / records.length) * 100)
+
+  return delay({
+    month: '2026-07',
+    totalDays: records.length,
+    presentDays,
+    lateDays,
+    absentDays,
+    attendanceRate,
+    records,
+  })
+}
 
 export const fetchOnlineUsers = (): Promise<OnlineUser[]> =>
   delay(
