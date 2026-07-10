@@ -13,6 +13,7 @@ class UserRead(BaseModel):
     name: str | None = None
     is_active: bool = True
     is_admin: bool = False
+    role: str = "student"
 
 
 class UserCreate(BaseModel):

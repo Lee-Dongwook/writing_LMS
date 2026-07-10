@@ -6,7 +6,7 @@ from uuid import uuid4
 from sqlalchemy import select
 
 from src.app.auth.security import hash_password, verify_password
-from src.app.user.model import User
+from src.app.user.model import ROLE_STUDENT, ROLE_TEACHER, User
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,14 +27,19 @@ async def create_user(
     email: str,
     password: str,
     name: str | None = None,
+    role: str = ROLE_STUDENT,
 ) -> User:
-    """새 사용자를 생성한다. 이메일 중복 여부는 호출부에서 사전 검사한다."""
+    """새 사용자를 생성한다. 이메일 중복 여부는 호출부에서 사전 검사한다.
+
+    공개 회원가입은 기본적으로 학생(`ROLE_STUDENT`)으로 생성된다.
+    """
     user = User(
         uuid=str(uuid4()),
         email=email,
         name=name,
         hashed_password=hash_password(password),
         is_active=True,
+        role=role,
     )
     db.add(user)
     await db.flush()
@@ -77,12 +82,14 @@ async def ensure_admin_user(
             hashed_password=password_hash,
             is_active=True,
             is_admin=True,
+            role=ROLE_TEACHER,
         )
         db.add(user)
     else:
         user.hashed_password = password_hash
         user.is_active = True
         user.is_admin = True
+        user.role = ROLE_TEACHER
         if name is not None:
             user.name = name
     await db.flush()
