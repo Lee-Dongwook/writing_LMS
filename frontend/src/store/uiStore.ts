@@ -1,6 +1,11 @@
 import { create } from 'zustand'
 
-export type ActiveView = 'dashboard' | 'attendance' | 'grades' | 'assignments'
+export type ActiveView =
+  | 'dashboard'
+  | 'attendance'
+  | 'grades'
+  | 'assignments'
+  | 'classes'
 
 // 데모용 앱 권한(역할). 온라인 유저의 role(수강생/강사/매니저)과는 별개다.
 export type AppRole = 'director' | 'student' | 'parent'

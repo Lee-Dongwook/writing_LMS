@@ -5,12 +5,15 @@ import type {
   AttendanceSummary,
   CalendarEvent,
   CourseOverview,
+  CurriculumWeek,
   ExamResult,
   GradeReport,
+  Klass,
   Notice,
   NotifLog,
   OnlineUser,
   ScheduleItem,
+  SessionChange,
   VocabTest,
   WrongItem,
 } from '../types'
@@ -383,6 +386,87 @@ export const fetchNotifLogs = (): Promise<NotifLog[]> =>
     { id: 'nl3', time: '09:04', student: '김철수', type: '등원', channel: '알림톡', to: '어머니 010-****-2841' },
     { id: 'nl4', time: '09:02', student: '이동욱', type: '등원', channel: '알림톡', to: '아버지 010-****-1092' },
     { id: 'nl5', time: '09:24', student: '이영희', type: '등원', channel: 'SMS', to: '어머니 010-****-7733' },
+  ])
+
+// 수강/강의 관리 목업 ──────────────────────────────
+export const fetchClasses = (): Promise<Klass[]> =>
+  delay([
+    {
+      id: 'c1',
+      name: '고3 독서·문학 심화반',
+      grade: '고3',
+      level: '심화',
+      school: '공통',
+      studentCount: 14,
+      capacity: 16,
+      schedule: '월·수·금 19:00',
+      teacher: '김강사',
+      progress: 68,
+    },
+    {
+      id: 'c2',
+      name: '고2 국어 내신대비반 (용죽고)',
+      grade: '고2',
+      level: '내신대비',
+      school: '용죽고',
+      studentCount: 12,
+      capacity: 15,
+      schedule: '화·목 18:00',
+      teacher: '박강사',
+      progress: 42,
+    },
+    {
+      id: 'c3',
+      name: '고1 기초 다지기반',
+      grade: '고1',
+      level: '기초',
+      school: '공통',
+      studentCount: 9,
+      capacity: 15,
+      schedule: '토 10:00',
+      teacher: '이강사',
+      progress: 25,
+    },
+  ])
+
+export const fetchCurriculum = (): Promise<CurriculumWeek[]> =>
+  delay([
+    { week: 1, topic: '독서 - 인문', detail: '논지 전개와 관점 비교', status: '완료' },
+    { week: 2, topic: '독서 - 사회', detail: '경제/법 지문 정보 처리', status: '완료' },
+    { week: 3, topic: '독서 - 과학/기술', detail: '원리·과정 도식화', status: '완료' },
+    { week: 4, topic: '문학 - 현대시', detail: '화자·정서·표현', status: '진행중' },
+    { week: 5, topic: '문학 - 고전시가', detail: '갈래별 관습과 어휘', status: '예정' },
+    { week: 6, topic: '문학 - 현대소설', detail: '서술상 특징과 시점', status: '예정' },
+    { week: 7, topic: '선택 - 언어와 매체', detail: '음운·문법 요소', status: '예정' },
+    { week: 8, topic: '실전 모의고사', detail: '시간 운용 전략', status: '예정' },
+  ])
+
+export const fetchSessionChanges = (): Promise<SessionChange[]> =>
+  delay([
+    {
+      id: 'sc1',
+      date: '2026-07-15',
+      type: '휴강',
+      target: '고3 독서·문학 심화반',
+      reason: '강사 학회 참석',
+      makeupDate: '2026-07-19',
+    },
+    {
+      id: 'sc2',
+      date: '2026-07-11',
+      type: '보강',
+      target: '김철수 (고3 심화반)',
+      reason: '7/7 결석 보충',
+      makeupDate: null,
+    },
+    {
+      id: 'sc3',
+      date: '2026-07-22',
+      type: '휴강',
+      target: '전체',
+      reason: '학원 정기 점검',
+      makeupDate: '2026-07-24',
+    },
   ])
 
 export const fetchOnlineUsers = (): Promise<OnlineUser[]> =>

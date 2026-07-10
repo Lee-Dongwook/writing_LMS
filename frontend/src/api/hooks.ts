@@ -3,12 +3,15 @@ import {
   fetchAssignments,
   fetchAttendance,
   fetchCalendarEvents,
+  fetchClasses,
   fetchCourseOverview,
+  fetchCurriculum,
   fetchGradeReport,
   fetchNotices,
   fetchNotifLogs,
   fetchOnlineUsers,
   fetchSchedule,
+  fetchSessionChanges,
   fetchVocabTests,
   fetchWrongItems,
 } from './mock'
@@ -42,6 +45,15 @@ export const useVocabTests = () =>
 
 export const useNotifLogs = () =>
   useQuery({ queryKey: ['notif-logs'], queryFn: fetchNotifLogs })
+
+export const useClasses = () =>
+  useQuery({ queryKey: ['classes'], queryFn: fetchClasses })
+
+export const useCurriculum = () =>
+  useQuery({ queryKey: ['curriculum'], queryFn: fetchCurriculum })
+
+export const useSessionChanges = () =>
+  useQuery({ queryKey: ['session-changes'], queryFn: fetchSessionChanges })
 
 export const useOnlineUsers = (enabled: boolean) =>
   useQuery({ queryKey: ['online-users'], queryFn: fetchOnlineUsers, enabled })

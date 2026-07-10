@@ -137,6 +137,37 @@ export interface VocabTest {
   total: number
 }
 
+// ── 수강 / 강의 관리 ───────────────────────────────
+export interface Klass {
+  id: string
+  name: string
+  grade: string // 고1 / 고2 / 고3
+  level: string // 기초 / 심화 / 내신대비
+  school: string // 학교(내신 대비 반) — 없으면 '공통'
+  studentCount: number
+  capacity: number
+  schedule: string // 예: '월·수·금 19:00'
+  teacher: string
+  progress: number // 진도율 0~100
+}
+
+export type WeekStatus = '완료' | '진행중' | '예정'
+export interface CurriculumWeek {
+  week: number
+  topic: string // 주차 주제
+  detail: string // 세부 진도
+  status: WeekStatus
+}
+
+export interface SessionChange {
+  id: string
+  date: string // YYYY-MM-DD
+  type: '보강' | '휴강'
+  target: string // 대상 반/학생
+  reason: string
+  makeupDate: string | null // 보강 일정(휴강 시)
+}
+
 export interface CourseOverview {
   title: string
   round: string
