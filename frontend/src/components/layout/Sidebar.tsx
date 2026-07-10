@@ -7,6 +7,7 @@ const NAV: { view: ActiveView; icon: string; label: string }[] = [
   { view: 'grades', icon: '📊', label: '성적 · 평가' },
   { view: 'assignments', icon: '📝', label: '과제 · 오답노트' },
   { view: 'classes', icon: '🏫', label: '수강 · 강의' },
+  { view: 'communication', icon: '📢', label: '알림 · 소통' },
 ]
 
 const FOOTER_LINKS = ['서비스이용약관', '개인정보처리방침', '마케팅이용약관']

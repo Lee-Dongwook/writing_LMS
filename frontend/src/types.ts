@@ -168,6 +168,28 @@ export interface SessionChange {
   makeupDate: string | null // 보강 일정(휴강 시)
 }
 
+// ── 알림 / 소통 ────────────────────────────────────
+export interface Announcement {
+  id: string
+  scope: string // '전체' 또는 반 이름
+  category: '공지' | '알림장'
+  title: string
+  body: string
+  author: string
+  date: string // YYYY-MM-DD
+  pinned: boolean
+}
+
+export interface CounselLog {
+  id: string
+  date: string // YYYY-MM-DD
+  student: string
+  counselor: string // 상담 강사
+  type: '학부모' | '학생'
+  summary: string
+  shared: boolean // 관리자 공유 여부
+}
+
 export interface CourseOverview {
   title: string
   round: string

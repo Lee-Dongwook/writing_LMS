@@ -1,9 +1,11 @@
 import type {
+  Announcement,
   Assignment,
   AttendanceRecord,
   AttendanceStatus,
   AttendanceSummary,
   CalendarEvent,
+  CounselLog,
   CourseOverview,
   CurriculumWeek,
   ExamResult,
@@ -466,6 +468,82 @@ export const fetchSessionChanges = (): Promise<SessionChange[]> =>
       target: '전체',
       reason: '학원 정기 점검',
       makeupDate: '2026-07-24',
+    },
+  ])
+
+// 알림/소통 목업 ───────────────────────────────────
+export const fetchAnnouncements = (): Promise<Announcement[]> =>
+  delay([
+    {
+      id: 'an1',
+      scope: '전체',
+      category: '공지',
+      title: '여름 특강 시간표 안내',
+      body: '7/21부터 여름 특강이 시작됩니다. 반별 시간표를 확인해 주세요.',
+      author: '원장',
+      date: '2026-07-09',
+      pinned: true,
+    },
+    {
+      id: 'an2',
+      scope: '고3 독서·문학 심화반',
+      category: '알림장',
+      title: '다음 주 준비물 · 과제',
+      body: '「소유권과 점유」 지문 분석 프린트 지참, 어휘 100선 3회독.',
+      author: '김강사',
+      date: '2026-07-08',
+      pinned: false,
+    },
+    {
+      id: 'an3',
+      scope: '전체',
+      category: '공지',
+      title: '자습실 운영 시간 변경',
+      body: '평일 자습실 운영이 22:30까지로 연장됩니다.',
+      author: '원장',
+      date: '2026-07-06',
+      pinned: false,
+    },
+    {
+      id: 'an4',
+      scope: '고2 국어 내신대비반 (용죽고)',
+      category: '알림장',
+      title: '내신 대비 특강 안내',
+      body: '용죽고 중간고사 범위 대비 특강을 7/18 진행합니다.',
+      author: '박강사',
+      date: '2026-07-05',
+      pinned: false,
+    },
+  ])
+
+export const fetchCounselLogs = (): Promise<CounselLog[]> =>
+  delay([
+    {
+      id: 'cl1',
+      date: '2026-07-08',
+      student: '이동욱',
+      counselor: '김강사',
+      type: '학부모',
+      summary: '독서 영역 점수 상승 추세 공유. 문학 감상 서술 보완 지도 예정.',
+      shared: true,
+    },
+    {
+      id: 'cl2',
+      date: '2026-07-04',
+      student: '김철수',
+      counselor: '김강사',
+      type: '학생',
+      summary: '자습 집중도 저하 상담. 주간 학습 계획표 재작성 합의.',
+      shared: true,
+    },
+    {
+      id: 'cl3',
+      date: '2026-06-28',
+      student: '이영희',
+      counselor: '박강사',
+      type: '학부모',
+      summary: '내신·수능 병행 부담 관련 상담. 과제량 조정 요청 반영.',
+      shared: false,
     },
   ])
 

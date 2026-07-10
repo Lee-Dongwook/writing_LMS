@@ -1,9 +1,11 @@
 import { useQuery } from '@tanstack/react-query'
 import {
+  fetchAnnouncements,
   fetchAssignments,
   fetchAttendance,
   fetchCalendarEvents,
   fetchClasses,
+  fetchCounselLogs,
   fetchCourseOverview,
   fetchCurriculum,
   fetchGradeReport,
@@ -54,6 +56,12 @@ export const useCurriculum = () =>
 
 export const useSessionChanges = () =>
   useQuery({ queryKey: ['session-changes'], queryFn: fetchSessionChanges })
+
+export const useAnnouncements = () =>
+  useQuery({ queryKey: ['announcements'], queryFn: fetchAnnouncements })
+
+export const useCounselLogs = () =>
+  useQuery({ queryKey: ['counsel-logs'], queryFn: fetchCounselLogs })
 
 export const useOnlineUsers = (enabled: boolean) =>
   useQuery({ queryKey: ['online-users'], queryFn: fetchOnlineUsers, enabled })
