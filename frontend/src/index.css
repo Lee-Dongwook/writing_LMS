@@ -14,9 +14,11 @@ body,
 
 body {
   margin: 0;
-  background-color: #f4f5fa;
+  background-color: #ffffff;
+  color: #1a1a1a;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  letter-spacing: -0.01em;
 }
 
 /* thin scrollbar for panels */
@@ -25,9 +27,30 @@ body {
   height: 6px;
 }
 .thin-scroll::-webkit-scrollbar-thumb {
-  background: #d5d8e6;
+  background: #ddd8d0;
   border-radius: 9999px;
 }
 .thin-scroll::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* 절제된 모션: 페이드업만 */
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.fade-up {
+  animation: fade-up 0.4s ease both;
+}
+
+/* 통계 숫자용 */
+.stat-num {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
 }
