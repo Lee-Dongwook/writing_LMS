@@ -37,6 +37,17 @@ export interface AttendanceRecord {
   note: string
 }
 
+// 등하원 알림톡/SMS 발송 로그
+export type NotifChannel = '알림톡' | 'SMS'
+export interface NotifLog {
+  id: string
+  time: string // HH:MM
+  student: string
+  type: '등원' | '하원'
+  channel: NotifChannel
+  to: string // 수신 학부모 (예: '어머니 010-****-1234')
+}
+
 export interface AttendanceSummary {
   month: string // YYYY-MM
   totalDays: number

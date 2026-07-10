@@ -6,6 +6,7 @@ import {
   fetchCourseOverview,
   fetchGradeReport,
   fetchNotices,
+  fetchNotifLogs,
   fetchOnlineUsers,
   fetchSchedule,
   fetchVocabTests,
@@ -38,6 +39,9 @@ export const useWrongItems = () =>
 
 export const useVocabTests = () =>
   useQuery({ queryKey: ['vocab-tests'], queryFn: fetchVocabTests })
+
+export const useNotifLogs = () =>
+  useQuery({ queryKey: ['notif-logs'], queryFn: fetchNotifLogs })
 
 export const useOnlineUsers = (enabled: boolean) =>
   useQuery({ queryKey: ['online-users'], queryFn: fetchOnlineUsers, enabled })

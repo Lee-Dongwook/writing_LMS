@@ -8,6 +8,7 @@ import type {
   ExamResult,
   GradeReport,
   Notice,
+  NotifLog,
   OnlineUser,
   ScheduleItem,
   VocabTest,
@@ -35,10 +36,10 @@ export const fetchCourseOverview = (): Promise<CourseOverview> =>
 
 export const fetchNotices = (): Promise<Notice[]> =>
   delay([
-    { id: 'n1', tag: '공지사항', title: '수업 일정', author: '임정민' },
-    { id: 'n2', tag: '공지', title: '필요서류 요청받음', author: '임정민' },
-    { id: 'n3', tag: '공지', title: '자습 운영 시간 안내', author: '임정민' },
-    { id: 'n4', tag: '공지', title: '훈련생 필수 제출 서류', author: '임정민' },
+    { id: 'n1', tag: '공지사항', title: '수업 일정', author: '김강사' },
+    { id: 'n2', tag: '공지', title: '필요서류 요청받음', author: '김강사' },
+    { id: 'n3', tag: '공지', title: '자습 운영 시간 안내', author: '김강사' },
+    { id: 'n4', tag: '공지', title: '훈련생 필수 제출 서류', author: '김강사' },
   ])
 
 export const fetchSchedule = (): Promise<ScheduleItem[]> =>
@@ -51,10 +52,11 @@ export const fetchCalendarEvents = (): Promise<CalendarEvent[]> =>
   ])
 
 const ROLES: OnlineUser['role'][] = ['수강생', '강사', '매니저']
+// 데모용 가명 (실명 아님)
 const NAMES = [
-  '강연수', '김순동', '김영철', '김종대', '김지현', '박규섭2', '박세용', '박지원',
-  '서민준', '오하늘', '이도윤', '이수민', '장현우', '정예린', '조민재', '최유나',
-  '한지훈', '홍서연', '문가온', '배정후', '신아름', '윤도현',
+  '홍길동', '김철수', '이영희', '박민수', '최지우', '정하늘', '강바다', '윤소라',
+  '임가온', '오태양', '한별이', '서은결', '조아름', '신도담', '문누리', '배슬기',
+  '남기찬', '유보라', '전초롱', '고나무', '허수아', '노을찬',
 ]
 
 // 출석 목업: 2026년 7월, 평일(월~금)만 수업일로 생성한다.
@@ -371,6 +373,16 @@ export const fetchVocabTests = (): Promise<VocabTest[]> =>
     { id: 'v2', week: '6월 3주차', date: '2026-06-21', score: 35, total: 40 },
     { id: 'v3', week: '6월 4주차', date: '2026-06-28', score: 34, total: 40 },
     { id: 'v4', week: '7월 1주차', date: '2026-07-05', score: 38, total: 40 },
+  ])
+
+// 오늘 등하원 알림 발송 이력 목업
+export const fetchNotifLogs = (): Promise<NotifLog[]> =>
+  delay([
+    { id: 'nl1', time: '18:02', student: '김철수', type: '하원', channel: '알림톡', to: '어머니 010-****-2841' },
+    { id: 'nl2', time: '18:00', student: '이동욱', type: '하원', channel: '알림톡', to: '아버지 010-****-1092' },
+    { id: 'nl3', time: '09:04', student: '김철수', type: '등원', channel: '알림톡', to: '어머니 010-****-2841' },
+    { id: 'nl4', time: '09:02', student: '이동욱', type: '등원', channel: '알림톡', to: '아버지 010-****-1092' },
+    { id: 'nl5', time: '09:24', student: '이영희', type: '등원', channel: 'SMS', to: '어머니 010-****-7733' },
   ])
 
 export const fetchOnlineUsers = (): Promise<OnlineUser[]> =>

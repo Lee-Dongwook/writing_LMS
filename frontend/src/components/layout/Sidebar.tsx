@@ -150,9 +150,9 @@ export default function Sidebar() {
           ))}
         </ul>
         <p className="leading-relaxed">
-          Copyright 2024-2026 FLOW-UP. all
+          Copyright 2024-2026 국풍2000 용죽 국어관.
           <br />
-          rights reserved
+          all rights reserved
         </p>
       </div>
     </aside>
