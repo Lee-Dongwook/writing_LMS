@@ -1,9 +1,12 @@
 import { useUiStore, APP_ROLES } from '../../store/uiStore'
 import { useCourseOverview } from '../../api/hooks'
+import { useAuthStore } from '../../store/authStore'
 
 export default function Header() {
   const { toggleSidebar, role, setRole } = useUiStore()
   const { data } = useCourseOverview()
+  const user = useAuthStore((s) => s.user)
+  const logout = useAuthStore((s) => s.logout)
 
   const title = data ? `${data.title} ${data.round}` : '강의실'
 
@@ -48,15 +51,18 @@ export default function Header() {
         ))}
       </div>
 
-      <button className="rounded-md p-2 text-slate-400 hover:bg-slate-100" aria-label="펼치기">
-        <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-          <path
-            fillRule="evenodd"
-            d="M5.23 7.21a.75.75 0 011.06.02L10 11.17l3.71-3.94a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
-            clipRule="evenodd"
-          />
-        </svg>
-      </button>
+      {/* 로그인 사용자 + 로그아웃 */}
+      <div className="flex items-center gap-2 pl-1">
+        <span className="hidden max-w-[9rem] truncate text-sm font-medium text-slate-600 sm:inline">
+          {user?.name || user?.email}
+        </span>
+        <button
+          onClick={logout}
+          className="rounded-md px-2.5 py-1.5 text-xs font-medium text-slate-500 ring-1 ring-line hover:bg-slate-100"
+        >
+          로그아웃
+        </button>
+      </div>
     </header>
   )
 }
